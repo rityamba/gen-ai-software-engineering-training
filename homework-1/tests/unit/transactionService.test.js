@@ -97,6 +97,56 @@ describe("transactionService", () => {
       expect(service.list()).toEqual([]);
     });
 
+    it("FR-5.1 the account filter matches the source or the destination", () => {
+      const deposit = service.create(validBody.deposit());
+      const transfer = service.create(validBody.transfer());
+      service.create(validBody.deposit({ toAccount: "ACC-OTHER" }));
+
+      expect(service.list({ accountId: "ACC-67890" }).map((t) => t.id)).toEqual(
+        [transfer.id],
+      );
+      expect(
+        service
+          .list({ accountId: "ACC-12345" })
+          .map((t) => t.id)
+          .sort(),
+      ).toEqual([deposit.id, transfer.id].sort());
+    });
+
+    it("FR-5.3 date bounds are inclusive at both ends", () => {
+      service.create(validBody.deposit({ timestamp: "2024-01-01T00:00:00Z" }));
+      service.create(
+        validBody.deposit({ timestamp: "2024-01-31T23:59:59.999Z" }),
+      );
+      service.create(validBody.deposit({ timestamp: "2024-02-01T00:00:00Z" }));
+
+      const result = service.list({
+        from: new Date("2024-01-01T00:00:00.000Z"),
+        to: new Date("2024-01-31T23:59:59.999Z"),
+      });
+      expect(result.map((t) => t.timestamp)).toEqual([
+        "2024-01-31T23:59:59.999Z",
+        "2024-01-01T00:00:00.000Z",
+      ]);
+    });
+
+    it("FR-5.4 combines filters with AND", () => {
+      service.create(validBody.deposit({ amount: 500 }));
+      const transfer = service.create(validBody.transfer());
+      service.create(validBody.withdrawal({ amount: 9999 })); // failed
+
+      expect(
+        service.list({
+          accountId: "ACC-12345",
+          type: "transfer",
+          status: "completed",
+        }),
+      ).toEqual([transfer]);
+      expect(service.list({ type: "withdrawal", status: "completed" })).toEqual(
+        [],
+      );
+    });
+
     it("FR-2.3 sorts newest first by timestamp", () => {
       service.create(validBody.deposit({ timestamp: "2024-01-10T00:00:00Z" }));
       service.create(validBody.deposit({ timestamp: "2024-03-01T00:00:00Z" }));

@@ -2,6 +2,7 @@
 
 const {
   TYPES,
+  TYPE_MESSAGE,
   ACCOUNT_REGEX,
   ACCOUNT_FORMAT_MESSAGE,
   ALLOWED_FIELDS,
@@ -83,7 +84,7 @@ function validateCurrency(value) {
 
 function validateType(value) {
   if (value === undefined) return "Type is required";
-  if (!TYPES.includes(value)) return `Type must be one of: ${TYPES.join(", ")}`;
+  if (!TYPES.includes(value)) return TYPE_MESSAGE;
   return null;
 }
 

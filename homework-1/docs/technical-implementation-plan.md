@@ -425,7 +425,7 @@ None, as a product non-goal (Confirmed). Consequences and future path:
   - It must round-trip as a real date, so `2024-02-30` is rejected.
   - It must not be later than the server clock, with zero tolerance.
   - It is stored as `toISOString()` (UTC).
-- **Filters:** `YYYY-MM-DD` means the start or end of that day in UTC. Full date-times follow the same rules as the body.
+- **Filters:** `YYYY-MM-DD` means the start or end of that day in UTC. Full date-times follow the body's format rules (offset required, real calendar date) but may be in the future, so `to=2099-01-01` is a valid query.
 - **`+` in query strings:** in a URL query, an unencoded `+` decodes to a space, so `?from=2024-01-15T10:30:00+02:00` arrives as `…10:30:00 02:00`. This is rejected with the message `Invalid date. Encode "+" in an offset as %2B, or use Z`. The API reference documents `%2B` and recommends `Z` or date-only values. A test covers both the encoded and unencoded forms.
 - **Approved in review:** requiring a timezone (formerly R2) is now part of D1 and D21 in the product plan.
 - **Alternatives:** accept any value `Date.parse` understands; allow a few seconds of tolerance for clock skew.

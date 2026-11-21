@@ -4,6 +4,7 @@ const express = require("express");
 const { validateAccountId } = require("../validators/accountIdValidator");
 const accountService = require("../services/accountService");
 const ValidationError = require("../errors/ValidationError");
+const { unknownQueryParamMessage } = require("../utils/constants");
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.get("/accounts/:accountId/balance", (req, res) => {
     ...validateAccountId(req.params.accountId),
     ...Object.keys(req.query).map((param) => ({
       field: param,
-      message: `Unknown query parameter "${param}"`,
+      message: unknownQueryParamMessage(param),
     })),
   ];
   if (details.length > 0) throw new ValidationError(details);

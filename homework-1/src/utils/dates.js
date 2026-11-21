@@ -90,4 +90,32 @@ function validateTimestamp(value, now = new Date()) {
   return null;
 }
 
-module.exports = { parseIsoDateTime, validateTimestamp };
+/** YYYY-MM-DD, used by the from/to filters (D21). */
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Parses a from/to filter value (FR-5.3, D21, AD-6). A full date-time follows the body's
+ * format rules (offset required, real calendar date) but may be in the future. A date
+ * alone is a UTC day: its start for "from", its last millisecond for "to".
+ * @param {unknown} value
+ * @param {"start"|"end"} boundary which end of a date-only day to use
+ * @returns {Date|null} the instant, or null when the value is not a valid date
+ */
+function parseDateFilter(value, boundary) {
+  if (typeof value !== "string") return null;
+  const match = DATE_ONLY_REGEX.exec(value);
+  if (!match) return parseIsoDateTime(value);
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  if (boundary === "end") date.setUTCHours(23, 59, 59, 999);
+  return date;
+}
+
+module.exports = { parseIsoDateTime, validateTimestamp, parseDateFilter };

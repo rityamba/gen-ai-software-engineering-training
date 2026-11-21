@@ -3,6 +3,7 @@
 const {
   parseIsoDateTime,
   validateTimestamp,
+  parseDateFilter,
 } = require("../../src/utils/dates");
 
 const NOW = new Date("2025-06-01T12:00:00.000Z");
@@ -95,5 +96,34 @@ describe("dates (AD-6)", () => {
     expect(validateTimestamp("2999-01-01T00:00:00Z")).toBe(
       "Timestamp must not be in the future",
     );
+  });
+});
+
+describe("parseDateFilter (FR-5.3, D21)", () => {
+  it.each([
+    ["2024-01-31", "start", "2024-01-31T00:00:00.000Z"],
+    ["2024-01-31", "end", "2024-01-31T23:59:59.999Z"],
+    ["2024-02-29", "end", "2024-02-29T23:59:59.999Z"],
+    ["0050-06-01", "start", "0050-06-01T00:00:00.000Z"],
+    ["2024-01-15T10:30:00+02:00", "start", "2024-01-15T08:30:00.000Z"],
+    ["2024-01-15T10:30:00Z", "end", "2024-01-15T10:30:00.000Z"],
+    ["2099-01-01T00:00:00Z", "end", "2099-01-01T00:00:00.000Z"],
+  ])("D21 parses %s (%s) as %s", (input, boundary, iso) => {
+    expect(parseDateFilter(input, boundary).toISOString()).toBe(iso);
+  });
+
+  it.each([
+    ["impossible day", "2023-02-29"],
+    ["month 13", "2024-13-01"],
+    ["day 0", "2024-01-00"],
+    ["date-time without timezone", "2024-01-15T10:30:00"],
+    ["single-digit month", "2024-1-15"],
+    ["not a date", "yesterday"],
+  ])("D21 rejects %s", (_label, input) => {
+    expect(parseDateFilter(input, "start")).toBeNull();
+  });
+
+  it("D21 rejects a non-string value", () => {
+    expect(parseDateFilter(["2024-01-01"], "start")).toBeNull();
   });
 });

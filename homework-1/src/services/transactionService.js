@@ -76,9 +76,40 @@ function create(input, { now = new Date() } = {}) {
   return toPublic(record);
 }
 
-/** @returns {object[]} all transactions, newest first (FR-2.1, FR-2.3). */
-function list() {
-  return store.getAll().sort(compareNewestFirst).map(toPublic);
+/**
+ * Whether a record passes every supplied filter (AND, FR-5.4). The account filter
+ * matches either side (FR-5.1); dates compare instants, inclusive at both ends (D21).
+ */
+function matches(record, { accountId, type, status, from, to }) {
+  if (
+    accountId !== undefined &&
+    record.fromAccount !== accountId &&
+    record.toAccount !== accountId
+  ) {
+    return false;
+  }
+  if (type !== undefined && record.type !== type) return false;
+  if (status !== undefined && record.status !== status) return false;
+  if (from === undefined && to === undefined) return true;
+
+  const time = Date.parse(record.timestamp);
+  if (from !== undefined && time < from.getTime()) return false;
+  if (to !== undefined && time > to.getTime()) return false;
+  return true;
+}
+
+/**
+ * Transactions matching the filters, newest first (FR-2.1, FR-2.3, FR-5).
+ * @param {{accountId?: string, type?: string, status?: string, from?: Date, to?: Date}} [filters]
+ *   already validated by validateTransactionQuery
+ * @returns {object[]}
+ */
+function list(filters = {}) {
+  return store
+    .getAll()
+    .filter((record) => matches(record, filters))
+    .sort(compareNewestFirst)
+    .map(toPublic);
 }
 
 /** @returns {object|null} the transaction, or null when unknown (FR-2.2). */

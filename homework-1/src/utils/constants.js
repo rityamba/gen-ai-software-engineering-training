@@ -3,6 +3,9 @@
 /** Transaction types (FR-4.4). */
 const TYPES = Object.freeze(["deposit", "withdrawal", "transfer"]);
 
+/** Shared by the body and query validators, so both report the same text. */
+const TYPE_MESSAGE = `Type must be one of: ${TYPES.join(", ")}`;
+
 /** Transaction statuses (FR-1.4). `pending` exists in the model but is never assigned. */
 const STATUSES = Object.freeze(["pending", "completed", "failed"]);
 
@@ -17,6 +20,18 @@ const ACCOUNT_REGEX = /^ACC-[A-Za-z0-9]{5}$/;
 /** Shared by the body validator and the path validator, so both report the same text. */
 const ACCOUNT_FORMAT_MESSAGE =
   "Account must match the format ACC-XXXXX, where X is a letter or digit";
+
+/** Shared by every endpoint that rejects unexpected query parameters (D16). */
+const unknownQueryParamMessage = (name) => `Unknown query parameter "${name}"`;
+
+/** The only filters GET /transactions accepts, in error-report order (FR-5, D16, §6.2). */
+const TRANSACTION_QUERY_PARAMS = Object.freeze([
+  "accountId",
+  "type",
+  "status",
+  "from",
+  "to",
+]);
 
 /** The only fields a client may send in POST /transactions, in error-report order (D16, §6.7). */
 const ALLOWED_FIELDS = Object.freeze([
@@ -54,10 +69,13 @@ const CURRENCIES = Object.freeze([
 
 module.exports = {
   TYPES,
+  TYPE_MESSAGE,
   STATUSES,
   FAILURE_REASONS,
   ACCOUNT_REGEX,
   ACCOUNT_FORMAT_MESSAGE,
+  unknownQueryParamMessage,
+  TRANSACTION_QUERY_PARAMS,
   ALLOWED_FIELDS,
   SERVER_FIELDS,
   CURRENCIES,
