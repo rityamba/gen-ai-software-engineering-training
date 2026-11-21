@@ -35,6 +35,38 @@ function errorHandler(err, req, res, next) {
     });
   }
 
+  // The router rethrows decodeURIComponent failures as URIError with status 400 but no
+  // `expose`, so they need their own branch to avoid falling through to 500.
+  if (
+    err instanceof URIError &&
+    (err.status === 400 || err.statusCode === 400)
+  ) {
+    return res.status(400).json({
+      error: "Validation failed",
+      details: [
+        { field: "path", message: "URL contains invalid percent-encoding" },
+      ],
+    });
+  }
+
+  // Other client errors from the body parser (unsupported charset/encoding, unreadable
+  // stream). Fixed messages only: err.message is never sent to the client.
+  const status = err && (err.status || err.statusCode);
+  if (Number.isInteger(status) && status >= 400 && status < 500 && err.expose) {
+    return res.status(status).json({
+      error: "Validation failed",
+      details: [
+        {
+          field: "body",
+          message:
+            status === 415
+              ? "Unsupported Content-Encoding or charset; send UTF-8 JSON"
+              : "Request body could not be read",
+        },
+      ],
+    });
+  }
+
   if (err instanceof NotFoundError) {
     return res.status(404).json({ error: err.message });
   }

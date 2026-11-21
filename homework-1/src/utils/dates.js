@@ -66,7 +66,11 @@ function parseIsoDateTime(value) {
   const date = new Date(0);
   date.setUTCFullYear(year, month - 1, day);
   date.setUTCHours(hour, minute, second, millis);
-  return new Date(date.getTime() - offsetMinutes * 60_000);
+  const result = new Date(date.getTime() - offsetMinutes * 60_000);
+  // A positive offset on year 0000 can land before year 0; toISOString would then
+  // use the extended ±YYYYYY form, which breaks the response format and string ordering.
+  if (result.getUTCFullYear() < 0) return null;
+  return result;
 }
 
 /**

@@ -252,6 +252,8 @@ Rules:
 | Validation failure, invalid query, malformed `accountId` | 400 | `{"error":"Validation failed","details":[{"field":"amount","message":"Amount must be a positive number"}, …]}` |
 | Invalid JSON, a body that isn't a JSON object, or a missing / non-JSON `Content-Type` | 400 | `{"error":"Validation failed","details":[{"field":"body","message":"Request body must be a JSON object"}]}` (invalid JSON: `"Malformed JSON"`) |
 | JSON body larger than the 100 kb limit | 413 | `{"error":"Validation failed","details":[{"field":"body","message":"Request body must not exceed 100kb"}]}` |
+| Unsupported `charset` or `Content-Encoding` on a JSON body | 415 | `{"error":"Validation failed","details":[{"field":"body","message":"Unsupported Content-Encoding or charset; send UTF-8 JSON"}]}` (other unreadable bodies, e.g. corrupt gzip: 400 `"Request body could not be read"`) |
+| Invalid percent-encoding in the URL path | 400 | `{"error":"Validation failed","details":[{"field":"path","message":"URL contains invalid percent-encoding"}]}` |
 | Unknown transaction | 404 | `{"error":"Transaction not found"}` |
 | Unknown route or method | 404 | `{"error":"Not found"}` |
 | Unexpected error | 500 | `{"error":"Internal server error"}`, with no stack trace or internals |

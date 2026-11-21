@@ -56,4 +56,79 @@ describe("Error contract (§6.7)", () => {
       ],
     });
   });
+
+  describe("BR-007 router decode errors", () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it("BR-007 a path with invalid percent-encoding gives 400 on field path and is not logged", async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await request(app).get("/transactions/%E0");
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: "Validation failed",
+        details: [
+          { field: "path", message: "URL contains invalid percent-encoding" },
+        ],
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("BR-001 body-parser client errors", () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it("BR-001 an unsupported charset gives 415 on field body and is not logged", async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await request(app)
+        .post("/transactions")
+        .set("Content-Type", "application/json; charset=latin1")
+        .send('{"amount": 10}');
+
+      expect(res.status).toBe(415);
+      expect(res.body).toEqual({
+        error: "Validation failed",
+        details: [
+          {
+            field: "body",
+            message: "Unsupported Content-Encoding or charset; send UTF-8 JSON",
+          },
+        ],
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("BR-001 an unsupported Content-Encoding gives 415, not 500", async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await request(app)
+        .post("/transactions")
+        .set("Content-Type", "application/json")
+        .set("Content-Encoding", "x-unknown")
+        .send('{"amount": 10}');
+
+      expect(res.status).toBe(415);
+      expect(res.body.error).toBe("Validation failed");
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("BR-001 a gzip-labelled body that is not gzip gives 400, not 500", async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await request(app)
+        .post("/transactions")
+        .set("Content-Type", "application/json")
+        .set("Content-Encoding", "gzip")
+        .send('{"amount": 10}');
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: "Validation failed",
+        details: [{ field: "body", message: "Request body could not be read" }],
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
 });

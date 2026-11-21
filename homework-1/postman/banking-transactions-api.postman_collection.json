@@ -102,6 +102,118 @@
           ]
         },
         {
+          "name": "Deposit EUR (funds the withdrawal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Deposits 250 EUR into `accountA` so the next withdrawal has funds once the funds rule (D2) is in place.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 250,\n  \"currency\": \"EUR\",\n  \"type\": \"deposit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Defaults applied\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(null);",
+                  "  pm.expect(tx.amount).to.eql(250);",
+                  "  pm.expect(Date.parse(tx.timestamp)).to.be.closeTo(Date.now(), 60000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deposit UAH (funds the transfer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Deposits 1500.75 UAH into `accountA` so the transfer has funds once the funds rule (D2) is in place.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1500.75,\n  \"currency\": \"UAH\",\n  \"type\": \"deposit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Defaults applied\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(null);",
+                  "  pm.expect(tx.amount).to.eql(1500.75);",
+                  "  pm.expect(Date.parse(tx.timestamp)).to.be.closeTo(Date.now(), 60000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Withdrawal (with timestamp offset)",
           "request": {
             "method": "POST",

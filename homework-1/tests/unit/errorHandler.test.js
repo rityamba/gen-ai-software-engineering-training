@@ -101,6 +101,86 @@ describe("errorHandler (§10.1)", () => {
     expect(spy.mock.calls[0][0]).toContain(err.stack);
   });
 
+  it("BR-001 an exposed 4xx parser error gives that status on field body", () => {
+    const res = mockRes();
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const err = Object.assign(new Error('unsupported charset "LATIN1"'), {
+      status: 415,
+      expose: true,
+      type: "charset.unsupported",
+    });
+
+    errorHandler(err, req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(415);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Validation failed",
+      details: [
+        {
+          field: "body",
+          message: "Unsupported Content-Encoding or charset; send UTF-8 JSON",
+        },
+      ],
+    });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain("LATIN1");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("BR-001 an exposed 400 via statusCode gives the generic body message", () => {
+    const res = mockRes();
+    const err = Object.assign(new Error("incorrect header check"), {
+      statusCode: 400,
+      expose: true,
+    });
+
+    errorHandler(err, req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Validation failed",
+      details: [{ field: "body", message: "Request body could not be read" }],
+    });
+  });
+
+  it("BR-001 a 4xx status without expose still gives a generic 500", () => {
+    const res = mockRes();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    const err = Object.assign(new Error("internal"), { status: 418 });
+
+    errorHandler(err, req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
+  });
+
+  it("BR-007 a URIError with status 400 gives 400 on field path", () => {
+    const res = mockRes();
+    const err = Object.assign(new URIError("Failed to decode param '%E0'"), {
+      status: 400,
+      statusCode: 400,
+    });
+
+    errorHandler(err, req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Validation failed",
+      details: [
+        { field: "path", message: "URL contains invalid percent-encoding" },
+      ],
+    });
+  });
+
+  it("BR-007 a URIError without a status still gives a generic 500", () => {
+    const res = mockRes();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+
+    errorHandler(new URIError("URI malformed"), req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
+  });
+
   it("§10.2 a non-Error value thrown still gives a generic 500", () => {
     const res = mockRes();
     jest.spyOn(console, "error").mockImplementation(() => {});
