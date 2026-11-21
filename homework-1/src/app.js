@@ -6,6 +6,7 @@ const createRequestLogger = require("./middleware/requestLogger");
 const notFound = require("./middleware/notFound");
 const errorHandler = require("./middleware/errorHandler");
 const healthRouter = require("./routes/health");
+const transactionsRouter = require("./routes/transactions");
 
 /**
  * Builds the Express app. Does not listen — see server.js (§2, §4).
@@ -18,6 +19,7 @@ function createApp() {
   app.use(express.json({ limit: config.bodyLimit, strict: true }));
 
   app.use(healthRouter);
+  app.use(transactionsRouter);
 
   app.use(notFound);
   app.use(errorHandler);

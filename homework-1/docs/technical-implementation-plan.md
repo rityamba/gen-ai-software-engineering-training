@@ -251,6 +251,7 @@ Rules:
 |---|---|---|
 | Validation failure, invalid query, malformed `accountId` | 400 | `{"error":"Validation failed","details":[{"field":"amount","message":"Amount must be a positive number"}, …]}` |
 | Invalid JSON, a body that isn't a JSON object, or a missing / non-JSON `Content-Type` | 400 | `{"error":"Validation failed","details":[{"field":"body","message":"Request body must be a JSON object"}]}` (invalid JSON: `"Malformed JSON"`) |
+| JSON body larger than the 100 kb limit | 413 | `{"error":"Validation failed","details":[{"field":"body","message":"Request body must not exceed 100kb"}]}` |
 | Unknown transaction | 404 | `{"error":"Transaction not found"}` |
 | Unknown route or method | 404 | `{"error":"Not found"}` |
 | Unexpected error | 500 | `{"error":"Internal server error"}`, with no stack trace or internals |
@@ -271,7 +272,7 @@ None, as a product non-goal (Confirmed). Consequences and future path:
 
 | Concern | Measure | Status |
 |---|---|---|
-| Malformed or oversized input | `express.json({ limit: '100kb' })`; strict validation of every field and query parameter (D16) | Confirmed |
+| Malformed or oversized input | `express.json({ limit: '100kb' })` (a larger body gives 413, §6.7); strict validation of every field and query parameter (D16) | Confirmed |
 | Prototype pollution | Unknown fields are rejected, so `__proto__` and `constructor` in a body or query give 400. Query parser is Express 5 `simple`, which creates no nested objects. | Confirmed |
 | Information leakage | 500 responses are generic; stacks are only logged. `x-powered-by` is disabled. | Confirmed |
 | Injection | No database, shell or template rendering. Values are only compared and stored. | Confirmed |
@@ -286,6 +287,7 @@ None, as a product non-goal (Confirmed). Consequences and future path:
 ### 10.1 Error handling (Confirmed)
 - **Domain errors:** `ValidationError(details[])` gives 400 and `NotFoundError(message)` gives 404. Both are thrown by routes: validators stay pure and only return `details`.
 - **JSON parse errors:** Express's `SyntaxError` with `type === 'entity.parse.failed'` is mapped to 400 in the same format.
+- **Oversized body:** Express's error with `type === 'entity.too.large'` is mapped to 413 in the same format, with the limit taken from `config.bodyLimit`. Without this mapping it would fall through to a 500.
 - **Unknown errors:** 500 with a generic body, and logged with the stack trace.
 - **Unknown routes:** `notFound` is the last router and gives 404 `{"error":"Not found"}`.
 - **Async handlers:** Express 5 forwards rejected promises to the error handler (AD-2). Handlers are synchronous today anyway.
