@@ -42,7 +42,7 @@
     },
     {
       "name": "Create transaction",
-      "description": "`POST /transactions` \u2014 records a transaction. Body must be a JSON object with `Content-Type: application/json` (max 100kb).\n\n| Field | Required | Rules |\n|---|---|---|\n| `type` | yes | `deposit` \\| `withdrawal` \\| `transfer` |\n| `amount` | yes | JSON number, `> 0`, `<= 1000000000`, at most 2 decimal places |\n| `currency` | yes | Uppercase ISO 4217, one of: USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH |\n| `fromAccount` | withdrawal, transfer | `ACC-` + 5 letters/digits (case-sensitive); must be absent or `null` for deposit |\n| `toAccount` | deposit, transfer | Same format; must be absent or `null` for withdrawal; must differ from `fromAccount` |\n| `timestamp` | no | ISO 8601 with seconds and timezone (`Z` or `\u00b1hh:mm`), not in the future. Defaults to server time; stored as UTC |\n\nAny other field is rejected (`id`, `status`, `failureReason` are server-set). All problems are reported at once.\n\n**201 Created** + `Location: /transactions/{id}`\n```json\n{ \"id\": \"uuid\", \"fromAccount\": \"ACC-12345 | null\", \"toAccount\": \"ACC-67890 | null\", \"amount\": 100.5,\n  \"currency\": \"USD\", \"type\": \"deposit\", \"timestamp\": \"2024-01-15T10:30:00.000Z\", \"status\": \"completed\" }\n```\nCurrently every created transaction has `status: \"completed\"`.",
+      "description": "`POST /transactions` \u2014 records a transaction. Body must be a JSON object with `Content-Type: application/json` (max 100kb).\n\n| Field | Required | Rules |\n|---|---|---|\n| `type` | yes | `deposit` \\| `withdrawal` \\| `transfer` |\n| `amount` | yes | JSON number, `> 0`, `<= 1000000000`, at most 2 decimal places |\n| `currency` | yes | Uppercase ISO 4217, one of: USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH |\n| `fromAccount` | withdrawal, transfer | `ACC-` + 5 letters/digits (case-sensitive); must be absent or `null` for deposit |\n| `toAccount` | deposit, transfer | Same format; must be absent or `null` for withdrawal; must differ from `fromAccount` |\n| `timestamp` | no | ISO 8601 with seconds and timezone (`Z` or `\u00b1hh:mm`), not in the future. Defaults to server time; stored as UTC |\n\nAny other field is rejected (`id`, `status`, `failureReason` are server-set). All problems are reported at once.\n\n**201 Created** + `Location: /transactions/{id}`\n```json\n{ \"id\": \"uuid\", \"fromAccount\": \"ACC-12345 | null\", \"toAccount\": \"ACC-67890 | null\", \"amount\": 100.5,\n  \"currency\": \"USD\", \"type\": \"deposit\", \"timestamp\": \"2024-01-15T10:30:00.000Z\", \"status\": \"completed\" }\n```\n**Status rules:** a deposit is always `completed`. A withdrawal or transfer is `completed` only if `fromAccount` holds enough funds **in that currency** (completed transactions only, checked in arrival order, whatever `timestamp` says).\nOtherwise it is still stored and returned with **201**, but with `status: \"failed\"` and an extra field `failureReason: \"INSUFFICIENT_FUNDS\"`. `failureReason` appears only on failed transactions.\n\nThe deposits below fund the withdrawal and transfer that follow, so those complete.",
       "item": [
         {
           "name": "Deposit (required fields only)",
@@ -421,6 +421,57 @@
                   "  pm.expect(tx.status).to.eql('completed');",
                   "});",
                   "pm.test(\"Amount kept\", () => pm.expect(tx.amount).to.eql(1000000000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Withdrawal - insufficient funds (failed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "`accountB` never holds GBP, so the funds rule fails it. The request itself is valid: **201**, stored with `status: \"failed\"` and `failureReason`, and it does not change any balance.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccount\": \"{{accountB}}\",\n  \"amount\": 999,\n  \"currency\": \"GBP\",\n  \"type\": \"withdrawal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Recorded as failed with a reason\", () => {",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status','failureReason');",
+                  "  pm.expect(tx.status).to.eql('failed');",
+                  "  pm.expect(tx.failureReason).to.eql('INSUFFICIENT_FUNDS');",
+                  "});"
                 ]
               }
             }
@@ -1444,6 +1495,237 @@
                 "exec": [
                   "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
                   "pm.test(\"Error body\", () => pm.expect(pm.response.json()).to.eql({ error: \"Transaction not found\" }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Account balance",
+      "description": "`GET /accounts/:accountId/balance` \u2014 balance per currency, from **completed** transactions only. Currencies are never added together.\n\n- Deposits add to `toAccount`, withdrawals subtract from `fromAccount`, transfers do both.\n- A currency is listed once the account has any completed transaction in it; a net zero shows as `0`.\n- An account with no completed transactions returns `200` with `balance: {}` (not 404).\n- A malformed `accountId` gives **400**. The endpoint takes **no query parameters**: any one gives **400** `Unknown query parameter \"<name>\"`, reported together with an `accountId` error.\n\n**200**\n```json\n{ \"accountId\": \"ACC-12345\", \"balance\": { \"USD\": 1000000100.51, \"EUR\": 0 } }\n```\nExact amounts depend on how many times the collection has run against the same server, so the tests check the shape, not the totals.",
+      "item": [
+        {
+          "name": "Balance - account A",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "balance"
+              ]
+            },
+            "description": "After *Create transaction*: EUR and UAH were deposited and fully spent, so both show `0`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Balance shape\", () => {",
+                  "  pm.expect(body).to.have.all.keys('accountId','balance');",
+                  "  pm.expect(body.accountId).to.eql(pm.variables.get(\"accountA\"));",
+                  "  pm.expect(body.balance).to.be.an('object');",
+                  "  for (const v of Object.values(body.balance)) pm.expect(v).to.be.a('number');",
+                  "});",
+                  "pm.test(\"Fully spent currencies stay visible as 0\", () => {",
+                  "  pm.expect(body.balance.EUR).to.eql(0);",
+                  "  pm.expect(body.balance.UAH).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - failed transaction is not counted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountB}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountB}}",
+                "balance"
+              ]
+            },
+            "description": "`accountB` received the UAH transfer. The failed GBP withdrawal is ignored, so there is no `GBP` key."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Balance shape\", () => {",
+                  "  pm.expect(body).to.have.all.keys('accountId','balance');",
+                  "  pm.expect(body.accountId).to.eql(pm.variables.get(\"accountB\"));",
+                  "  pm.expect(body.balance).to.be.an('object');",
+                  "  for (const v of Object.values(body.balance)) pm.expect(v).to.be.a('number');",
+                  "});",
+                  "pm.test(\"Failed withdrawal does not appear\", () => pm.expect(body.balance).to.not.have.property(\"GBP\"));",
+                  "pm.test(\"Incoming transfer counted\", () => pm.expect(body.balance.UAH).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - account with no transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-EMPTY/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-EMPTY",
+                "balance"
+              ]
+            },
+            "description": "A well-formed account nobody has used: empty balance, not 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty balance\", () => pm.expect(pm.response.json()).to.eql({ accountId: \"ACC-EMPTY\", balance: {} }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - malformed accountId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/acc-12345/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "acc-12345",
+                "balance"
+              ]
+            },
+            "description": "The `ACC-` prefix is case-sensitive."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - unknown query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "balance"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": "There is no currency filter; rather than silently returning every currency, the parameter is rejected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - malformed accountId and query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/acc-1/balance?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "acc-1",
+                "balance"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": "All problems are reported at once: the path error first, then each query parameter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Both errors reported\", () => pm.expect(pm.response.json().details).to.eql([",
+                  "  { field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" },",
+                  "  { field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }",
+                  "]));"
                 ]
               }
             }
