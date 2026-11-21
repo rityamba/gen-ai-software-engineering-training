@@ -47,6 +47,7 @@ describe("transactionService", () => {
     });
 
     it("§5.2 hides internal fields and returns amount in major units", () => {
+      service.create(validBody.deposit()); // funds ACC-12345 so the transfer completes
       const t = service.create(validBody.transfer({ amount: 1.15 }));
       expect(Object.keys(t)).toEqual([
         "id",
@@ -60,6 +61,34 @@ describe("transactionService", () => {
       ]);
       expect(t.amount).toBe(1.15);
       expect(store.getById(t.id).amountMinor).toBe(115);
+    });
+  });
+
+  describe("create — funds rule (FR-1.7, D2)", () => {
+    it("FR-1.7 an unfunded withdrawal is stored as failed with a failureReason", () => {
+      const t = service.create(validBody.withdrawal());
+
+      expect(t.status).toBe("failed");
+      expect(t.failureReason).toBe("INSUFFICIENT_FUNDS");
+      expect(store.getById(t.id).status).toBe("failed");
+    });
+
+    it("FR-1.7 an unfunded transfer is failed, a funded one completed", () => {
+      expect(service.create(validBody.transfer()).status).toBe("failed");
+
+      service.create(validBody.deposit({ amount: 100.5 }));
+      expect(service.create(validBody.transfer()).status).toBe("completed");
+    });
+
+    it("FR-1.7 a later transfer cannot spend what an earlier one already used", () => {
+      service.create(validBody.deposit({ amount: 150 }));
+
+      expect(service.create(validBody.transfer({ amount: 100 })).status).toBe(
+        "completed",
+      );
+      expect(service.create(validBody.transfer({ amount: 100 })).status).toBe(
+        "failed",
+      );
     });
   });
 

@@ -12,6 +12,9 @@ describe("Transactions API", () => {
 
   describe("POST /transactions", () => {
     it("FR-1.5 creates the TASKS.md sample transfer with 201", async () => {
+      // UF-2: ACC-12345 is funded first, otherwise the funds rule (FR-1.7) fails it.
+      await postTransaction(validBody.deposit({ amount: 500 }));
+
       const res = await postTransaction({
         fromAccount: "ACC-12345",
         toAccount: "ACC-67890",

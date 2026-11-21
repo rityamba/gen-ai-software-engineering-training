@@ -3,6 +3,7 @@
 const {
   TYPES,
   ACCOUNT_REGEX,
+  ACCOUNT_FORMAT_MESSAGE,
   ALLOWED_FIELDS,
   SERVER_FIELDS,
   CURRENCIES,
@@ -54,11 +55,7 @@ function validateAccounts(body, details) {
       continue;
     }
     if (typeof value !== "string" || !ACCOUNT_REGEX.test(value)) {
-      details.push({
-        field,
-        message:
-          "Account must match the format ACC-XXXXX, where X is a letter or digit",
-      });
+      details.push({ field, message: ACCOUNT_FORMAT_MESSAGE });
       continue;
     }
     valid[field] = value;

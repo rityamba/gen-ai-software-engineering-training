@@ -14,6 +14,10 @@ const FAILURE_REASONS = Object.freeze({
 /** `ACC-` + 5 letters or digits, case-sensitive (FR-4.2, D14). */
 const ACCOUNT_REGEX = /^ACC-[A-Za-z0-9]{5}$/;
 
+/** Shared by the body validator and the path validator, so both report the same text. */
+const ACCOUNT_FORMAT_MESSAGE =
+  "Account must match the format ACC-XXXXX, where X is a letter or digit";
+
 /** The only fields a client may send in POST /transactions, in error-report order (D16, §6.7). */
 const ALLOWED_FIELDS = Object.freeze([
   "fromAccount",
@@ -53,6 +57,7 @@ module.exports = {
   STATUSES,
   FAILURE_REASONS,
   ACCOUNT_REGEX,
+  ACCOUNT_FORMAT_MESSAGE,
   ALLOWED_FIELDS,
   SERVER_FIELDS,
   CURRENCIES,

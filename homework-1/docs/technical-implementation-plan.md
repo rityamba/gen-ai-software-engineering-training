@@ -226,6 +226,7 @@ Rules:
   - A currency is listed if the account has any completed transaction in it. A net zero shows as `0`.
   - No completed transactions gives `{}`.
 - A malformed `accountId` gives `400`.
+- The endpoint takes no query parameters. Any query parameter gives `400` with `Unknown query parameter "<name>"`, reported together with an `accountId` error (D16, D22).
 
 ### 6.5 `GET /accounts/:accountId/summary` — FR-6, D3, D4, D19, D20
 ```json
