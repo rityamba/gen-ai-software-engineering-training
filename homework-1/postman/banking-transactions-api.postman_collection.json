@@ -1,0 +1,2739 @@
+{
+  "info": {
+    "_postman_id": "0eaf1d40-fc1e-549f-b277-c77f9a05a0f6",
+    "name": "Banking Transactions API",
+    "description": "Homework 1 - in-memory banking transactions service (Express 5).\n\n- **Auth:** none.\n- **Content type:** JSON requests and responses.\n- **Base URL:** `{{baseUrl}}` (default `http://localhost:3000`, port from `PORT`).\n\nRun folders in order: *Create transaction* saves `depositId`, used by later requests.\nThe collection uses its own accounts (`accountA` = ACC-PMA01, `accountB` = ACC-PMB01), not the ones in `demo/sample-data.json`, so it passes on an empty server and on one started with `demo/run.sh`, and can be run repeatedly.\nEvery request has test scripts, so the collection can run with `postman collection run`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness probe. No parameters.\n\n**200** `{ \"status\": \"ok\" }`"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Body\", () => pm.expect(pm.response.json()).to.eql({ status: \"ok\" }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Create transaction",
+      "description": "`POST /transactions` \u2014 records a transaction. Body must be a JSON object with `Content-Type: application/json` (max 100kb).\n\n| Field | Required | Rules |\n|---|---|---|\n| `type` | yes | `deposit` \\| `withdrawal` \\| `transfer` |\n| `amount` | yes | JSON number, `> 0`, `<= 1000000000`, at most 2 decimal places |\n| `currency` | yes | An active ISO 4217 currency code, upper case (e.g. USD, EUR, GBP, JPY, INR) |\n| `fromAccount` | withdrawal, transfer | `ACC-` + 5 letters/digits, any case; stored and returned in upper case; must be absent or `null` for deposit |\n| `toAccount` | deposit, transfer | Same format; must be absent or `null` for withdrawal; must differ from `fromAccount` |\n| `timestamp` | no | ISO 8601 with seconds and timezone (`Z` or `\u00b1hh:mm`), not in the future. Defaults to server time; stored as UTC |\n\nAny other field is rejected (`id`, `status`, `failureReason` are server-set). All problems are reported at once.\n\n**201 Created** + `Location: /transactions/{id}`\n```json\n{ \"id\": \"uuid\", \"fromAccount\": \"ACC-12345 | null\", \"toAccount\": \"ACC-67890 | null\", \"amount\": 100.5,\n  \"currency\": \"USD\", \"type\": \"deposit\", \"timestamp\": \"2024-01-15T10:30:00.000Z\", \"status\": \"completed\" }\n```\n**Status rules:** a deposit is always `completed`. A withdrawal or transfer is `completed` only if `fromAccount` holds enough funds **in that currency** at its `timestamp` (completed transactions only), and only if no later balance would drop below zero.\nOtherwise it is still stored and returned with **201**, but with `status: \"failed\"` and an extra field `failureReason: \"INSUFFICIENT_FUNDS\"`. `failureReason` appears only on failed transactions.\n\nThe deposits below fund the withdrawal and transfer that follow, so those complete.",
+      "item": [
+        {
+          "name": "Deposit (required fields only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Minimal deposit: only `toAccount`. `fromAccount` comes back as `null`, `timestamp` is set by the server. Saves `depositId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Defaults applied\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(null);",
+                  "  pm.expect(tx.amount).to.eql(100.5);",
+                  "  pm.expect(Date.parse(tx.timestamp)).to.be.closeTo(Date.now(), 60000);",
+                  "});",
+                  "pm.collectionVariables.set('depositId', tx.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deposit EUR (funds the withdrawal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Deposits 250 EUR into `accountA`, dated 14 January 2024, so the withdrawal that follows (dated 15 January 2024) has funds: the funds rule (D2) checks the balance at the withdrawal's own timestamp.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 250,\n  \"currency\": \"EUR\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-01-14T09:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Defaults applied, timestamp kept\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(null);",
+                  "  pm.expect(tx.amount).to.eql(250);",
+                  "  pm.expect(tx.timestamp).to.eql('2024-01-14T09:00:00.000Z');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deposit UAH (funds the transfer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Deposits 1500.75 UAH into `accountA`, dated 14 January 2024, so the transfer that follows (dated 15 January 2024) has funds: the funds rule (D2) checks the balance at the transfer's own timestamp.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1500.75,\n  \"currency\": \"UAH\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-01-14T09:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Defaults applied, timestamp kept\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(null);",
+                  "  pm.expect(tx.amount).to.eql(1500.75);",
+                  "  pm.expect(tx.timestamp).to.eql('2024-01-14T09:00:00.000Z');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Withdrawal (with timestamp offset)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Withdrawal needs `fromAccount` only. A client `timestamp` with an offset is normalised to UTC.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccount\": \"{{accountA}}\",\n  \"amount\": 250,\n  \"currency\": \"EUR\",\n  \"type\": \"withdrawal\",\n  \"timestamp\": \"2024-01-15T12:30:00+02:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Timestamp normalised to UTC\", () => pm.expect(tx.timestamp).to.eql(\"2024-01-15T10:30:00.000Z\"));",
+                  "pm.test(\"toAccount is null\", () => pm.expect(tx.toAccount).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transfer (all fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Transfer needs two different accounts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccount\": \"{{accountA}}\",\n  \"toAccount\": \"{{accountB}}\",\n  \"amount\": 1500.75,\n  \"currency\": \"UAH\",\n  \"type\": \"transfer\",\n  \"timestamp\": \"2024-01-15T10:30:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Echoes input\", () => {",
+                  "  pm.expect(tx.fromAccount).to.eql(pm.collectionVariables.get('accountA'));",
+                  "  pm.expect(tx.toAccount).to.eql(pm.collectionVariables.get('accountB'));",
+                  "  pm.expect(tx.amount).to.eql(1500.75);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Boundary: minimum amount, explicit null account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "`0.01` is the smallest accepted amount. `null` for a forbidden account field is treated as \"not supplied\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 0.01,\n  \"currency\": \"JPY\",\n  \"type\": \"deposit\",\n  \"fromAccount\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Amount kept\", () => pm.expect(tx.amount).to.eql(0.01));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Boundary: maximum amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "`1000000000` is the largest accepted amount.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1000000000,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Transaction shape\", () => {",
+                  "  pm.expect(tx.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
+                  "  pm.expect(tx.status).to.eql('completed');",
+                  "});",
+                  "pm.test(\"Amount kept\", () => pm.expect(tx.amount).to.eql(1000000000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Withdrawal - insufficient funds (failed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "`accountB` never holds GBP, so the funds rule fails it. The request itself is valid: **201**, stored with `status: \"failed\"` and `failureReason`, and it does not change any balance.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccount\": \"{{accountB}}\",\n  \"amount\": 999,\n  \"currency\": \"GBP\",\n  \"type\": \"withdrawal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const tx = pm.response.json();",
+                  "pm.test(\"Location header points to the new transaction\", () => {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.eql(`/transactions/${tx.id}`);",
+                  "});",
+                  "pm.test(\"Recorded as failed with a reason\", () => {",
+                  "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status','failureReason');",
+                  "  pm.expect(tx.status).to.eql('failed');",
+                  "  pm.expect(tx.failureReason).to.eql('INSUFFICIENT_FUNDS');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Create transaction - validation errors",
+      "description": "Expected: **400** with\n```json\n{ \"error\": \"Validation failed\", \"details\": [{ \"field\": \"...\", \"message\": \"...\" }] }\n```\n`details` lists every problem in field order (`fromAccount`, `toAccount`, `amount`, `currency`, `type`, `timestamp`), then unknown fields.",
+      "item": [
+        {
+          "name": "Body",
+          "item": [
+            {
+              "name": "Empty object - all required fields missing",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "An empty body with JSON content type behaves the same.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"amount\", \"message\": \"Amount is required\"}, {\"field\": \"currency\", \"message\": \"Currency is required\"}, {\"field\": \"type\", \"message\": \"Type is required\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Body is not an object (array)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Arrays, or a request without `Content-Type: application/json`, are rejected as a whole.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "[]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"body\", \"message\": \"Request body must be a JSON object\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Malformed JSON",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Unparseable JSON, or a top-level primitive such as `\"x\"` or `null`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"type\": \"deposit\",",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"body\", \"message\": \"Malformed JSON\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Payload too large (> 100kb)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "The pre-request script builds a ~110kb body. Expected **413** with the same error shape.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{largeBody}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.variables.set('largeBody', JSON.stringify({ note: 'x'.repeat(110 * 1024) }));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 413\", () => pm.response.to.have.status(413));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"body\", \"message\": \"Request body must not exceed 100kb\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Server-set and unknown fields",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "`id`, `status`, `failureReason` are set by the server; any other extra field is unknown.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\",\n  \"id\": \"11111111-1111-4111-8111-111111111111\",\n  \"status\": \"completed\",\n  \"note\": \"rent\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"id\", \"message\": \"id is set by the server and must not be sent\"}, {\"field\": \"status\", \"message\": \"status is set by the server and must not be sent\"}, {\"field\": \"note\", \"message\": \"Unknown field \\\"note\\\"\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Amount",
+          "item": [
+            {
+              "name": "Amount is zero",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Zero and negative amounts are rejected.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 0,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"amount\", \"message\": \"Amount must be a positive number\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Amount above maximum",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1000000000.01,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"amount\", \"message\": \"Amount must not exceed 1000000000\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Amount with 3 decimal places",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 10.005,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"amount\", \"message\": \"Amount must have at most 2 decimal places\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Amount as string",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Numeric strings are not accepted.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": \"100\",\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"amount\", \"message\": \"Amount must be a number\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Currency and type",
+          "item": [
+            {
+              "name": "Invalid currency (lowercase)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Codes must be upper case and an active ISO 4217 currency.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"usd\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"currency\", \"message\": \"Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Invalid type",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "With an unknown type no account is required; only the format of supplied accounts is checked.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"refund\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"type\", \"message\": \"Type must be one of: deposit, withdrawal, transfer\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Accounts",
+          "item": [
+            {
+              "name": "Invalid account format",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Exactly 5 letters or digits must follow `ACC-` (the id itself is case-insensitive).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"acc-123\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"toAccount\", \"message\": \"Account must match the format ACC-XXXXX, where X is a letter or digit\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Deposit with fromAccount",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\",\n  \"fromAccount\": \"{{accountB}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"fromAccount\", \"message\": \"fromAccount must not be set for a deposit\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Withdrawal without fromAccount, with toAccount",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 50,\n  \"currency\": \"GBP\",\n  \"type\": \"withdrawal\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"fromAccount\", \"message\": \"fromAccount is required for a withdrawal\"}, {\"field\": \"toAccount\", \"message\": \"toAccount must not be set for a withdrawal\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Transfer to the same account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fromAccount\": \"{{accountA}}\",\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 10,\n  \"currency\": \"PLN\",\n  \"type\": \"transfer\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"toAccount\", \"message\": \"toAccount must be different from fromAccount\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Timestamp",
+          "item": [
+            {
+              "name": "Timestamp without timezone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Seconds and a timezone (`Z` or `\u00b1hh:mm`) are mandatory.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-01-15T10:30:00\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"timestamp\", \"message\": \"Timestamp must be a valid ISO 8601 date-time with a timezone, e.g. 2024-01-15T10:30:00Z\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Timestamp is an impossible date",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "Calendar dates are checked, e.g. 30 February.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-02-30T10:30:00Z\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"timestamp\", \"message\": \"Timestamp must be a valid ISO 8601 date-time with a timezone, e.g. 2024-01-15T10:30:00Z\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Timestamp in the future",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ]
+                },
+                "description": "The pre-request script sets `futureTimestamp` to now + 1 day.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"{{futureTimestamp}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.variables.set('futureTimestamp', new Date(Date.now() + 86400000).toISOString());"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"Validation error contract\", () => {",
+                      "  pm.expect(body.error).to.eql(\"Validation failed\");",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"timestamp\", \"message\": \"Timestamp must not be in the future\"}]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Read transactions",
+      "item": [
+        {
+          "name": "List transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Returns all transactions as an array (empty `[]` when none), newest `timestamp` first; ties by creation order, newest first. Optional filters are covered in the *Filter transactions* folder; any other query parameter gives 400. Data is in-memory and resets on restart.\n\n**200** `[Transaction, ...]`"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get transaction by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{depositId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{depositId}}"
+              ]
+            },
+            "description": "Path param `id` \u2014 UUID returned by create (uses `depositId`, set by *Deposit (required fields only)*).\n\n**200** Transaction \u00b7 **404** `{ \"error\": \"Transaction not found\" }`"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Matches requested id\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"depositId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get transaction - unknown id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{unknownId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{unknownId}}"
+              ]
+            },
+            "description": "A well-formed UUID that does not exist."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body\", () => pm.expect(pm.response.json()).to.eql({ error: \"Transaction not found\" }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get transaction - malformed id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "not-a-uuid"
+              ]
+            },
+            "description": "Malformed ids are not validated separately; they are also 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body\", () => pm.expect(pm.response.json()).to.eql({ error: \"Transaction not found\" }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Filter transactions",
+      "description": "`GET /transactions` with filters. All filters are optional and combine with **AND**; the result keeps the newest-first order.\n\n| Param | Rule |\n|---|---|\n| `accountId` | `ACC-XXXXX`; matches `fromAccount` **or** `toAccount` |\n| `type` | `deposit` \\| `withdrawal` \\| `transfer` |\n| `status` | `pending` \\| `completed` \\| `failed` |\n| `from`, `to` | `YYYY-MM-DD` (UTC day; a date-only `to` includes the whole day, up to `23:59:59.999Z`) or an ISO 8601 date-time with a timezone. Both ends inclusive, `from <= to`, future dates allowed |\n\nIn a query string an unencoded `+` becomes a space, so write an offset as `%2B02:00` or use `Z`. Repeated, empty or unknown parameters give **400**, and every problem is reported at once.\n\nRun after *Create transaction*: the tests check that each result matches its filter, not exact counts, so the collection can run repeatedly on the same server.",
+      "item": [
+        {
+          "name": "By account (source or destination)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountB}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountB}}"
+                }
+              ]
+            },
+            "description": "`accountB` only ever appears as a transfer destination or a failed withdrawal source."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Every result involves the account\", () => {",
+                  "  const acc = pm.variables.get('accountB');",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) pm.expect([t.fromAccount, t.toAccount]).to.include(acc);",
+                  "});",
+                  "pm.test(\"Both directions are matched\", () => {",
+                  "  const acc = pm.variables.get('accountB');",
+                  "  pm.expect(list.some((t) => t.toAccount === acc)).to.be.true;",
+                  "  pm.expect(list.some((t) => t.fromAccount === acc)).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "By type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?type=transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "transfer"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Only transfers\", () => {",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) pm.expect(t.type).to.eql('transfer');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "By status (failed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?status=failed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "failed"
+                }
+              ]
+            },
+            "description": "Finds the insufficient-funds attempts, which the plain list mixes with completed transactions."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Only failed, each with a reason\", () => {",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) {",
+                  "    pm.expect(t.status).to.eql('failed');",
+                  "    pm.expect(t.failureReason).to.eql('INSUFFICIENT_FUNDS');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Date range (specification example)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?from=2024-01-01&to=2024-01-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2024-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2024-01-31"
+                }
+              ]
+            },
+            "description": "The example from the task. A date-only `to` includes the whole of 31 January (UTC)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Only January 2024\", () => {",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) {",
+                  "    pm.expect(t.timestamp >= '2024-01-01T00:00:00.000Z').to.be.true;",
+                  "    pm.expect(t.timestamp <= '2024-01-31T23:59:59.999Z').to.be.true;",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Date-time with an encoded offset",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?from=2024-01-15T12:30:00%2B02:00&to=2024-01-15T12:30:00%2B02:00",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2024-01-15T12:30:00%2B02:00"
+                },
+                {
+                  "key": "to",
+                  "value": "2024-01-15T12:30:00%2B02:00"
+                }
+              ]
+            },
+            "description": "`12:30+02:00` is `10:30Z`, the timestamp of the sample withdrawal and transfer. Dates are compared as instants."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Only the 10:30Z instant\", () => {",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) pm.expect(t.timestamp).to.eql('2024-01-15T10:30:00.000Z');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combined filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountA}}&type=withdrawal&status=completed&from=2024-01-01&to=2024-01-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountA}}"
+                },
+                {
+                  "key": "type",
+                  "value": "withdrawal"
+                },
+                {
+                  "key": "status",
+                  "value": "completed"
+                },
+                {
+                  "key": "from",
+                  "value": "2024-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2024-01-31"
+                }
+              ]
+            },
+            "description": "Every filter must match."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"Array sorted newest first\", () => {",
+                  "  pm.expect(list).to.be.an('array');",
+                  "  for (let i = 1; i < list.length; i++) pm.expect(list[i - 1].timestamp >= list[i].timestamp).to.be.true;",
+                  "});",
+                  "pm.test(\"Every result matches all filters\", () => {",
+                  "  const acc = pm.variables.get('accountA');",
+                  "  pm.expect(list.length).to.be.above(0);",
+                  "  for (const t of list) {",
+                  "    pm.expect([t.fromAccount, t.toAccount]).to.include(acc);",
+                  "    pm.expect(t.type).to.eql('withdrawal');",
+                  "    pm.expect(t.status).to.eql('completed');",
+                  "    pm.expect(t.timestamp.startsWith('2024-01-')).to.be.true;",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid filters",
+          "description": "Expected: **400** with `{ \"error\": \"Validation failed\", \"details\": [...] }`. `details` lists the filters in the order `accountId`, `type`, `status`, `from`, `to`, then a `from > to` problem, then unknown parameters.",
+          "item": [
+            {
+              "name": "Unknown type",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?type=refund",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "refund"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"type\",\"message\":\"Type must be one of: deposit, withdrawal, transfer\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Unknown status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?status=done",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "done"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"status\",\"message\":\"Status must be one of: pending, completed, failed\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Malformed accountId",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?accountId=AC-12345",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "accountId",
+                      "value": "AC-12345"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"accountId\",\"message\":\"Account must match the format ACC-XXXXX, where X is a letter or digit\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Impossible date",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?from=2024-02-30",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2024-02-30"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"from\",\"message\":\"Invalid date. Use YYYY-MM-DD or an ISO 8601 date-time with a timezone, e.g. 2024-01-15T10:30:00Z\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Unencoded + in an offset",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?from=2024-01-15T10:30:00+02:00",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2024-01-15T10:30:00+02:00"
+                    }
+                  ]
+                },
+                "description": "The `+` arrives as a space; the message tells the client to send `%2B` or use `Z`."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"from\",\"message\":\"Invalid date. Encode \\\"+\\\" in an offset as %2B, or use Z\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "from later than to",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?from=2024-02-01&to=2024-01-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2024-02-01"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2024-01-31"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"from\",\"message\":\"\\\"from\\\" must not be later than \\\"to\\\"\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Repeated parameter",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?type=deposit&type=transfer",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "deposit"
+                    },
+                    {
+                      "key": "type",
+                      "value": "transfer"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"type\",\"message\":\"Query parameter \\\"type\\\" must appear at most once\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Empty value",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?status=",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": ""
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"status\",\"message\":\"Query parameter \\\"status\\\" must not be empty\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Unknown parameter (typo)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?tpye=transfer",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "tpye",
+                      "value": "transfer"
+                    }
+                  ]
+                },
+                "description": "A typo is rejected instead of silently returning everything."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                      "  error: \"Validation failed\",",
+                      "  details: [{\"field\":\"tpye\",\"message\":\"Unknown query parameter \\\"tpye\\\"\"}]",
+                      "}));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Several problems at once",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/transactions?type=refund&accountId=bad&foo=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "refund"
+                    },
+                    {
+                      "key": "accountId",
+                      "value": "bad"
+                    },
+                    {
+                      "key": "foo",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"Every problem in order\", () => pm.expect(pm.response.json().details.map((d) => d.field)).to.eql([\"accountId\", \"type\", \"foo\"]));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Account balance",
+      "description": "`GET /accounts/:accountId/balance` \u2014 balance per currency, from **completed** transactions only. Currencies are never added together.\n\n- Deposits add to `toAccount`, withdrawals subtract from `fromAccount`, transfers do both.\n- A currency is listed once the account has any completed transaction in it; a net zero shows as `0`.\n- An account with no completed transactions returns `200` with `balance: {}` (not 404).\n- A malformed `accountId` gives **400**. The endpoint takes **no query parameters**: any one gives **400** `Unknown query parameter \"<name>\"`, reported together with an `accountId` error.\n\n**200**\n```json\n{ \"accountId\": \"ACC-12345\", \"balance\": { \"USD\": 1000000100.51, \"EUR\": 0 } }\n```\nExact amounts depend on how many times the collection has run against the same server, so the tests check the shape, not the totals.",
+      "item": [
+        {
+          "name": "Balance - account A",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "balance"
+              ]
+            },
+            "description": "After *Create transaction*: EUR and UAH were deposited and fully spent, so both show `0`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Balance shape\", () => {",
+                  "  pm.expect(body).to.have.all.keys('accountId','balance');",
+                  "  pm.expect(body.accountId).to.eql(pm.variables.get(\"accountA\"));",
+                  "  pm.expect(body.balance).to.be.an('object');",
+                  "  for (const v of Object.values(body.balance)) pm.expect(v).to.be.a('number');",
+                  "});",
+                  "pm.test(\"Fully spent currencies stay visible as 0\", () => {",
+                  "  pm.expect(body.balance.EUR).to.eql(0);",
+                  "  pm.expect(body.balance.UAH).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - failed transaction is not counted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountB}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountB}}",
+                "balance"
+              ]
+            },
+            "description": "`accountB` received the UAH transfer. The failed GBP withdrawal is ignored, so there is no `GBP` key."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Balance shape\", () => {",
+                  "  pm.expect(body).to.have.all.keys('accountId','balance');",
+                  "  pm.expect(body.accountId).to.eql(pm.variables.get(\"accountB\"));",
+                  "  pm.expect(body.balance).to.be.an('object');",
+                  "  for (const v of Object.values(body.balance)) pm.expect(v).to.be.a('number');",
+                  "});",
+                  "pm.test(\"Failed withdrawal does not appear\", () => pm.expect(body.balance).to.not.have.property(\"GBP\"));",
+                  "pm.test(\"Incoming transfer counted\", () => pm.expect(body.balance.UAH).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - account with no transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-EMPTY/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-EMPTY",
+                "balance"
+              ]
+            },
+            "description": "A well-formed account nobody has used: empty balance, not 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty balance\", () => pm.expect(pm.response.json()).to.eql({ accountId: \"ACC-EMPTY\", balance: {} }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - malformed accountId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/AC-12345/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "AC-12345",
+                "balance"
+              ]
+            },
+            "description": "The id must be `ACC-` followed by 5 letters or digits."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - unknown query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "balance"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": "There is no currency filter; rather than silently returning every currency, the parameter is rejected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Balance - malformed accountId and query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/acc-1/balance?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "acc-1",
+                "balance"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": "All problems are reported at once: the path error first, then each query parameter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Both errors reported\", () => pm.expect(pm.response.json().details).to.eql([",
+                  "  { field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" },",
+                  "  { field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }",
+                  "]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Account summary",
+      "description": "`GET /accounts/:accountId/summary` \u2014 an at-a-glance view of one account.\n\n- `totalDeposits` / `totalWithdrawals`: per currency, **completed** transactions only. An incoming transfer counts as a deposit, an outgoing one as a withdrawal, so for each currency deposits \u2212 withdrawals = balance. Both totals list the same currencies as the balance, with `0` for a side without movement.\n- `transactionCount`, `failedCount`, `mostRecentTransactionDate`: cover **all** of the account's transactions, failed ones included.\n- No transactions: `{}`, `{}`, `0`, `0`, `null`.\n- A malformed `accountId` gives **400**; the endpoint takes **no query parameters** (any one gives **400**).\n\n**200**\n```json\n{ \"accountId\": \"ACC-12345\", \"totalDeposits\": { \"USD\": 1000, \"EUR\": 250 }, \"totalWithdrawals\": { \"USD\": 0, \"EUR\": 250 },\n  \"transactionCount\": 7, \"failedCount\": 0, \"mostRecentTransactionDate\": \"2024-01-15T10:30:00.000Z\" }\n```\nTotals grow with every run against the same server, so the tests check the contract, not exact numbers.",
+      "item": [
+        {
+          "name": "Summary - account A",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "summary"
+              ]
+            },
+            "description": "EUR and UAH were deposited and then fully spent (withdrawal and outgoing transfer), so deposits equal withdrawals for both: the balance invariant at work."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"Summary shape\", () => {",
+                  "  pm.expect(s).to.have.all.keys('accountId','totalDeposits','totalWithdrawals','transactionCount','failedCount','mostRecentTransactionDate');",
+                  "  pm.expect(s.accountId).to.eql(pm.variables.get(\"accountA\"));",
+                  "  pm.expect(s.transactionCount).to.be.at.least(s.failedCount);",
+                  "  pm.expect(s.mostRecentTransactionDate).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);",
+                  "});",
+                  "pm.test(\"Both totals list the same currencies\", () => {",
+                  "  pm.expect(Object.keys(s.totalWithdrawals)).to.eql(Object.keys(s.totalDeposits));",
+                  "  for (const v of [...Object.values(s.totalDeposits), ...Object.values(s.totalWithdrawals)]) pm.expect(v).to.be.at.least(0);",
+                  "});",
+                  "pm.test(\"Fully spent currencies: deposits equal withdrawals\", () => {",
+                  "  pm.expect(s.totalDeposits.EUR).to.be.above(0);",
+                  "  pm.expect(s.totalWithdrawals.EUR).to.eql(s.totalDeposits.EUR);",
+                  "  pm.expect(s.totalWithdrawals.UAH).to.eql(s.totalDeposits.UAH);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - failed counted, not totalled",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountB}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountB}}",
+                "summary"
+              ]
+            },
+            "description": "`accountB` received the UAH transfer and has a failed GBP withdrawal: it is in the counts, but not in the totals."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"Summary shape\", () => {",
+                  "  pm.expect(s).to.have.all.keys('accountId','totalDeposits','totalWithdrawals','transactionCount','failedCount','mostRecentTransactionDate');",
+                  "  pm.expect(s.accountId).to.eql(pm.variables.get(\"accountB\"));",
+                  "  pm.expect(s.transactionCount).to.be.at.least(s.failedCount);",
+                  "  pm.expect(s.mostRecentTransactionDate).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);",
+                  "});",
+                  "pm.test(\"Both totals list the same currencies\", () => {",
+                  "  pm.expect(Object.keys(s.totalWithdrawals)).to.eql(Object.keys(s.totalDeposits));",
+                  "  for (const v of [...Object.values(s.totalDeposits), ...Object.values(s.totalWithdrawals)]) pm.expect(v).to.be.at.least(0);",
+                  "});",
+                  "pm.test(\"Incoming transfer is a deposit\", () => {",
+                  "  pm.expect(s.totalDeposits.UAH).to.be.above(0);",
+                  "  pm.expect(s.totalWithdrawals.UAH).to.eql(0);",
+                  "});",
+                  "pm.test(\"Failed withdrawal counted but not totalled\", () => {",
+                  "  pm.expect(s.failedCount).to.be.above(0);",
+                  "  pm.expect(s.totalDeposits).to.not.have.property('GBP');",
+                  "  pm.expect(s.totalWithdrawals).to.not.have.property('GBP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - account with no transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-EMPTY/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-EMPTY",
+                "summary"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty summary\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  accountId: \"ACC-EMPTY\", totalDeposits: {}, totalWithdrawals: {},",
+                  "  transactionCount: 0, failedCount: 0, mostRecentTransactionDate: null",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - malformed accountId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/AC-12345/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "AC-12345",
+                "summary"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - unknown query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/summary?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unknown routes",
+      "description": "Any route or method not listed above returns **404** `{ \"error\": \"Not found\" }` (no 405).",
+      "item": [
+        {
+          "name": "Unknown route",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body\", () => pm.expect(pm.response.json()).to.eql({ error: \"Not found\" }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unsupported method",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{depositId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{depositId}}"
+              ]
+            },
+            "description": "Transactions are immutable; there is no update or delete."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body\", () => pm.expect(pm.response.json()).to.eql({ error: \"Not found\" }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "accountA",
+      "value": "ACC-PMA01"
+    },
+    {
+      "key": "accountB",
+      "value": "ACC-PMB01"
+    },
+    {
+      "key": "unknownId",
+      "value": "00000000-0000-4000-8000-000000000000"
+    },
+    {
+      "key": "depositId",
+      "value": ""
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "description": "Sample transactions for the demo (UF-2). Posted in order by demo/seed.js. Deposits come first so ACC-12345 is funded; almost everything is dated January 2024, with one February transaction outside the specification's date-range example. The GBP withdrawal is the only intentional failure: ACC-12345 never holds GBP.",
+  "transactions": [
+    {
+      "note": "Fund ACC-12345 in USD",
+      "expectedStatus": "completed",
+      "body": {
+        "toAccount": "ACC-12345",
+        "amount": 5000,
+        "currency": "USD",
+        "type": "deposit",
+        "timestamp": "2024-01-02T09:00:00Z"
+      }
+    },
+    {
+      "note": "Fund ACC-12345 in EUR",
+      "expectedStatus": "completed",
+      "body": {
+        "toAccount": "ACC-12345",
+        "amount": 1200,
+        "currency": "EUR",
+        "type": "deposit",
+        "timestamp": "2024-01-03T10:15:00Z"
+      }
+    },
+    {
+      "note": "Fund ACC-67890 in GBP",
+      "expectedStatus": "completed",
+      "body": {
+        "toAccount": "ACC-67890",
+        "amount": 800,
+        "currency": "GBP",
+        "type": "deposit",
+        "timestamp": "2024-01-04T08:30:00Z"
+      }
+    },
+    {
+      "note": "Fund ACC-24680 in UAH",
+      "expectedStatus": "completed",
+      "body": {
+        "toAccount": "ACC-24680",
+        "amount": 15000,
+        "currency": "UAH",
+        "type": "deposit",
+        "timestamp": "2024-01-05T12:00:00Z"
+      }
+    },
+    {
+      "note": "Transfer EUR from ACC-12345 to ACC-24680",
+      "expectedStatus": "completed",
+      "body": {
+        "fromAccount": "ACC-12345",
+        "toAccount": "ACC-24680",
+        "amount": 250,
+        "currency": "EUR",
+        "type": "transfer",
+        "timestamp": "2024-01-10T14:45:00Z"
+      }
+    },
+    {
+      "note": "Withdraw GBP from ACC-67890",
+      "expectedStatus": "completed",
+      "body": {
+        "fromAccount": "ACC-67890",
+        "amount": 120.75,
+        "currency": "GBP",
+        "type": "withdrawal",
+        "timestamp": "2024-01-12T16:20:00Z"
+      }
+    },
+    {
+      "note": "Transfer UAH from ACC-24680 to ACC-12345",
+      "expectedStatus": "completed",
+      "body": {
+        "fromAccount": "ACC-24680",
+        "toAccount": "ACC-12345",
+        "amount": 1000,
+        "currency": "UAH",
+        "type": "transfer",
+        "timestamp": "2024-01-18T11:00:00Z"
+      }
+    },
+    {
+      "note": "Intentional failure: ACC-12345 has no GBP (INSUFFICIENT_FUNDS)",
+      "expectedStatus": "failed",
+      "body": {
+        "fromAccount": "ACC-12345",
+        "amount": 2000,
+        "currency": "GBP",
+        "type": "withdrawal",
+        "timestamp": "2024-01-25T13:30:00Z"
+      }
+    },
+    {
+      "note": "Withdraw USD from ACC-12345 on the last day of January",
+      "expectedStatus": "completed",
+      "body": {
+        "fromAccount": "ACC-12345",
+        "amount": 199.99,
+        "currency": "USD",
+        "type": "withdrawal",
+        "timestamp": "2024-01-31T18:00:00Z"
+      }
+    },
+    {
+      "note": "February deposit, outside the January date-range example",
+      "expectedStatus": "completed",
+      "body": {
+        "toAccount": "ACC-67890",
+        "amount": 50,
+        "currency": "USD",
+        "type": "deposit",
+        "timestamp": "2024-02-01T09:00:00Z"
+      }
+    }
+  ]
+}
