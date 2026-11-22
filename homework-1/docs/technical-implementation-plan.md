@@ -242,7 +242,7 @@ Rules:
 - **Counts:** `transactionCount` covers all of the account's transactions. `failedCount` covers the failed ones.
 - **Date:** `mostRecentTransactionDate` is the newest timestamp across all of the account's transactions.
 - **Empty account:** `{}`, `{}`, `0`, `0`, `null`.
-- **Errors:** a malformed `accountId` gives `400`.
+- **Errors:** a malformed `accountId` gives `400`. Like the balance, the endpoint takes no query parameters: any one gives `400` with `Unknown query parameter "<name>"`, reported together with an `accountId` error (D16, D22).
 
 ### 6.6 `GET /health` — FR-8.1, D8
 `200 {"status":"ok"}`
