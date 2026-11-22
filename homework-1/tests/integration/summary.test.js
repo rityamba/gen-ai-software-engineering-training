@@ -59,7 +59,7 @@ async function seedMixed() {
 describe("GET /accounts/:accountId/summary (FR-6)", () => {
   beforeEach(() => store.reset());
 
-  it("FR-6.5 an account with no transactions returns 200 with empty totals", async () => {
+  it("FR-6.5/D4 an account with no transactions returns 200 with empty totals", async () => {
     const res = await getSummary(A);
 
     expect(res.status).toBe(200);
@@ -103,7 +103,7 @@ describe("GET /accounts/:accountId/summary (FR-6)", () => {
   });
 
   it.each([A, B])(
-    "FR-6.4 deposits − withdrawals = balance for every currency (%s)",
+    "FR-6.4/D20 deposits − withdrawals = balance for every currency (%s)",
     async (accountId) => {
       await seedMixed();
 

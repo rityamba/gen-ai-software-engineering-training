@@ -101,7 +101,7 @@ describe("errorHandler (§10.1)", () => {
     expect(spy.mock.calls[0][0]).toContain(err.stack);
   });
 
-  it("BR-001 an exposed 4xx parser error gives that status on field body", () => {
+  it("FR-7.2 an exposed 4xx parser error gives that status on field body", () => {
     const res = mockRes();
     const spy = jest.spyOn(console, "error").mockImplementation(() => {});
     const err = Object.assign(new Error('unsupported charset "LATIN1"'), {
@@ -126,7 +126,7 @@ describe("errorHandler (§10.1)", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("BR-001 an exposed 400 via statusCode gives the generic body message", () => {
+  it("FR-7.2 an exposed 400 via statusCode gives the generic body message", () => {
     const res = mockRes();
     const err = Object.assign(new Error("incorrect header check"), {
       statusCode: 400,
@@ -142,7 +142,7 @@ describe("errorHandler (§10.1)", () => {
     });
   });
 
-  it("BR-001 a 4xx status without expose still gives a generic 500", () => {
+  it("FR-7.2 a 4xx status without expose still gives a generic 500", () => {
     const res = mockRes();
     jest.spyOn(console, "error").mockImplementation(() => {});
     const err = Object.assign(new Error("internal"), { status: 418 });
@@ -153,7 +153,7 @@ describe("errorHandler (§10.1)", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 
-  it("BR-007 a URIError with status 400 gives 400 on field path", () => {
+  it("FR-7.2 a URIError with status 400 gives 400 on field path", () => {
     const res = mockRes();
     const err = Object.assign(new URIError("Failed to decode param '%E0'"), {
       status: 400,
@@ -171,7 +171,7 @@ describe("errorHandler (§10.1)", () => {
     });
   });
 
-  it("BR-007 a URIError without a status still gives a generic 500", () => {
+  it("FR-7.2 a URIError without a status still gives a generic 500", () => {
     const res = mockRes();
     jest.spyOn(console, "error").mockImplementation(() => {});
 

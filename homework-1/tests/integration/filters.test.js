@@ -86,7 +86,7 @@ describe("GET /transactions filters (FR-5)", () => {
       ]);
     });
 
-    it("FR-5.7 status returns only that status", async () => {
+    it("FR-5.7/D15 status returns only that status", async () => {
       expect(idsOf(await list("?status=failed"))).toEqual([
         ids.failedWithdrawal,
       ]);
@@ -216,7 +216,7 @@ describe("GET /transactions filters (FR-5)", () => {
         },
       ]));
 
-    it("FR-5.6 malformed account", () =>
+    it("FR-5.6/D12 malformed account", () =>
       expect400("?accountId=acc-12345", [
         {
           field: "accountId",
@@ -268,7 +268,7 @@ describe("GET /transactions filters (FR-5)", () => {
         },
       ]));
 
-    it("D16 bracket syntax is not parsed into objects, so it is unknown", () =>
+    it("D16/AD-2 bracket syntax is not parsed into objects, so it is unknown", () =>
       expect400("?type[eq]=deposit", [
         { field: "type[eq]", message: 'Unknown query parameter "type[eq]"' },
       ]));

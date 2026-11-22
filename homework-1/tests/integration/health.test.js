@@ -4,7 +4,7 @@ const request = require("supertest");
 const app = require("../../src/app");
 
 describe("GET /health", () => {
-  it('FR-8.1 returns 200 with {"status":"ok"} as JSON', async () => {
+  it('FR-8.1/D8 returns 200 with {"status":"ok"} as JSON', async () => {
     const res = await request(app).get("/health");
 
     expect(res.status).toBe(200);

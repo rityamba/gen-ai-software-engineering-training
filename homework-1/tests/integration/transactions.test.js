@@ -76,7 +76,7 @@ describe("Transactions API", () => {
       expect(res.body.amount).toBe(0.01);
     });
 
-    it("D11 accepts exactly the maximum amount", async () => {
+    it("D11/AD-5 accepts exactly the maximum amount", async () => {
       const res = await postTransaction(
         validBody.deposit({ amount: 1000000000 }),
       );
@@ -120,7 +120,7 @@ describe("Transactions API", () => {
         "fromAccount",
       ],
     ])(
-      "FR-4 rejects %s with 400, names the field and stores nothing",
+      "FR-4/FR-1.8 rejects %s with 400, names the field and stores nothing",
       async (_label, override, field) => {
         const res = await postTransaction(validBody.deposit(override));
 
@@ -224,7 +224,7 @@ describe("Transactions API", () => {
       expect(res.body).toEqual([created.body]);
     });
 
-    it("FR-2.3 lists newest first by timestamp", async () => {
+    it("FR-2.3/D10 lists newest first by timestamp", async () => {
       await postTransaction(
         validBody.deposit({ timestamp: "2024-01-10T00:00:00Z" }),
       );
@@ -256,9 +256,9 @@ describe("Transactions API", () => {
 
     it.each([
       ["an unknown UUID", "00000000-0000-4000-8000-000000000000"],
-      ["a malformed id (D13)", "not-a-uuid"],
+      ["a malformed id", "not-a-uuid"],
       ["__proto__", "__proto__"],
-    ])("FR-2.2 returns 404 for %s", async (_label, id) => {
+    ])("FR-2.2/D13 returns 404 for %s, never 400", async (_label, id) => {
       const res = await request(app).get(`/transactions/${id}`);
 
       expect(res.status).toBe(404);

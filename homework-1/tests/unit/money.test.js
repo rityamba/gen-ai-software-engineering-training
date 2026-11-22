@@ -36,7 +36,7 @@ describe("money (AD-4, AD-5)", () => {
   );
 
   it.each([1000000000.01, 1e21])(
-    "D11 rejects above the maximum: %p",
+    "D11/AD-5 rejects above the maximum: %p",
     (amount) => {
       expect(validateAmount(amount)).toBe("Amount must not exceed 1000000000");
     },

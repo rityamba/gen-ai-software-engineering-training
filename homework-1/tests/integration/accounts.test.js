@@ -15,7 +15,7 @@ describe("Accounts API", () => {
   beforeEach(() => store.reset());
 
   describe("GET /accounts/:accountId/balance", () => {
-    it("FR-3.4 an account with no transactions returns 200 and an empty balance", async () => {
+    it("FR-3.4/D4 an account with no transactions returns 200 and an empty balance", async () => {
       const res = await getBalance(A);
 
       expect(res.status).toBe(200);
@@ -23,7 +23,7 @@ describe("Accounts API", () => {
       expect(res.body).toEqual({ accountId: A, balance: {} });
     });
 
-    it("FR-3.2 reflects a deposit, a transfer and a withdrawal for both accounts", async () => {
+    it("FR-3.1/FR-3.2 reflects a deposit, a transfer and a withdrawal for both accounts", async () => {
       await postTransaction(validBody.deposit({ amount: 300 }));
       await postTransaction(validBody.transfer({ amount: 100.5 }));
       await postTransaction(validBody.withdrawal({ amount: 49.5 }));

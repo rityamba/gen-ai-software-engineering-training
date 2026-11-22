@@ -80,12 +80,12 @@ describe("dates (AD-6)", () => {
     expect(validateTimestamp("yesterday", NOW)).toBe(INVALID);
   });
 
-  it("BR-004 rejects a year-0000 timestamp whose offset resolves before year 0", () => {
+  it("D1 rejects a year-0000 timestamp whose offset resolves before year 0", () => {
     expect(parseIsoDateTime("0000-01-01T00:00:00+01:00")).toBeNull();
     expect(validateTimestamp("0000-01-01T00:00:00+01:00", NOW)).toBe(INVALID);
   });
 
-  it("BR-004 still accepts the start of year 0000 in UTC", () => {
+  it("D1 still accepts the start of year 0000 in UTC", () => {
     const date = parseIsoDateTime("0000-01-01T00:00:00Z");
 
     expect(date).toBeInstanceOf(Date);

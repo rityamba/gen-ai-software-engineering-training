@@ -57,10 +57,10 @@ describe("Error contract (§6.7)", () => {
     });
   });
 
-  describe("BR-007 router decode errors", () => {
+  describe("FR-7.2 router decode errors", () => {
     afterEach(() => jest.restoreAllMocks());
 
-    it("BR-007 a path with invalid percent-encoding gives 400 on field path and is not logged", async () => {
+    it("FR-7.2 a path with invalid percent-encoding gives 400 on field path and is not logged", async () => {
       const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
       const res = await request(app).get("/transactions/%E0");
@@ -76,10 +76,10 @@ describe("Error contract (§6.7)", () => {
     });
   });
 
-  describe("BR-001 body-parser client errors", () => {
+  describe("FR-7.2 body-parser client errors", () => {
     afterEach(() => jest.restoreAllMocks());
 
-    it("BR-001 an unsupported charset gives 415 on field body and is not logged", async () => {
+    it("FR-7.2 an unsupported charset gives 415 on field body and is not logged", async () => {
       const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
       const res = await request(app)
@@ -100,7 +100,7 @@ describe("Error contract (§6.7)", () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it("BR-001 an unsupported Content-Encoding gives 415, not 500", async () => {
+    it("FR-7.2 an unsupported Content-Encoding gives 415, not 500", async () => {
       const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
       const res = await request(app)
@@ -114,7 +114,7 @@ describe("Error contract (§6.7)", () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it("BR-001 a gzip-labelled body that is not gzip gives 400, not 500", async () => {
+    it("FR-7.2 a gzip-labelled body that is not gzip gives 400, not 500", async () => {
       const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
       const res = await request(app)

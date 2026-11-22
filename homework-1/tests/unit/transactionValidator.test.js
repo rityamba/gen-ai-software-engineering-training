@@ -63,7 +63,7 @@ describe("transactionValidator", () => {
       expect(validate(validBody.deposit({ currency }))).toEqual([]);
     });
 
-    it("FR-4.1 accepts 2 decimal places in JPY (D17)", () => {
+    it("FR-4.1/D17 accepts 2 decimal places in JPY", () => {
       expect(
         validate(validBody.deposit({ currency: "JPY", amount: 10.25 })),
       ).toEqual([]);
@@ -204,7 +204,7 @@ describe("transactionValidator", () => {
     });
 
     it.each(["usd", "XXX", "XAU", "XTS", "DEM", "ABC", "US", "", 840, null])(
-      "D18 rejects currency %p as unsupported",
+      "D18/AD-7 rejects currency %p as unsupported",
       (currency) => {
         expect(validate(validBody.deposit({ currency }))).toEqual([
           { field: "currency", message: UNSUPPORTED },
