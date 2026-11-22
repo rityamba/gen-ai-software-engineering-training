@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "0eaf1d40-fc1e-549f-b277-c77f9a05a0f6",
     "name": "Banking Transactions API",
-    "description": "Homework 1 - in-memory banking transactions service (Express 5).\n\n- **Auth:** none.\n- **Content type:** JSON requests and responses.\n- **Base URL:** `{{baseUrl}}` (default `http://localhost:3000`, port from `PORT`).\n\nRun folders in order: *Create transaction* saves `depositId`, used by later requests.\nEvery request has test scripts, so the collection can run with `postman collection run`.",
+    "description": "Homework 1 - in-memory banking transactions service (Express 5).\n\n- **Auth:** none.\n- **Content type:** JSON requests and responses.\n- **Base URL:** `{{baseUrl}}` (default `http://localhost:3000`, port from `PORT`).\n\nRun folders in order: *Create transaction* saves `depositId`, used by later requests.\nThe collection uses its own accounts (`accountA` = ACC-PMA01, `accountB` = ACC-PMB01), not the ones in `demo/sample-data.json`, so it passes on an empty server and on one started with `demo/run.sh`, and can be run repeatedly.\nEvery request has test scripts, so the collection can run with `postman collection run`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -2721,11 +2721,11 @@
     },
     {
       "key": "accountA",
-      "value": "ACC-12345"
+      "value": "ACC-PMA01"
     },
     {
       "key": "accountB",
-      "value": "ACC-67890"
+      "value": "ACC-PMB01"
     },
     {
       "key": "unknownId",
