@@ -1,0 +1,162 @@
+# Sample requests for the Banking Transactions API (Phase 6).
+#
+# Open in VS Code with the REST Client extension and click "Send Request" above each
+# request, top to bottom. Start the API first with `demo/run.sh`, which loads
+# demo/sample-data.json; the expected results below assume that fresh, seeded state.
+#
+# Every request has an "Expected:" line: the HTTP status and, for created
+# transactions, the transaction status. tests/integration/demo.test.js runs this file
+# against a seeded server and checks each one.
+
+@baseUrl = http://localhost:3000
+
+### 1. Health check
+# Expected: 200 {"status":"ok"}
+GET {{baseUrl}}/health
+
+### 2. Specification sample: create a transfer (ACC-12345 was funded by the sample data)
+# Expected: 201, status "completed"
+# @name sampleTransfer
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "fromAccount": "ACC-12345",
+  "toAccount": "ACC-67890",
+  "amount": 100.50,
+  "currency": "USD",
+  "type": "transfer"
+}
+
+### 3. Specification sample: all transactions, newest first
+# Expected: 200, 11 transactions (10 sample + the transfer above)
+GET {{baseUrl}}/transactions
+
+### 4. Specification sample: transactions for one account (source or destination)
+# Expected: 200
+GET {{baseUrl}}/transactions?accountId=ACC-12345
+
+### 5. Specification sample: date range; a date-only "to" includes all of 31 January
+# Expected: 200, the 9 January 2024 sample transactions
+GET {{baseUrl}}/transactions?from=2024-01-01&to=2024-01-31
+
+### 6. Specification sample: account balance, per currency, completed only
+# Expected: 200 {"accountId":"ACC-12345","balance":{"USD":4699.51,"EUR":950,"UAH":1000}}
+GET {{baseUrl}}/accounts/ACC-12345/balance
+
+### 7. One transaction by id (the transfer from request 2)
+# Expected: 200
+GET {{baseUrl}}/transactions/{{sampleTransfer.response.body.$.id}}
+
+### 8. Combined filters: completed transfers in January 2024
+# Expected: 200, 2 transactions
+GET {{baseUrl}}/transactions?type=transfer&status=completed&from=2024-01-01&to=2024-01-31
+
+### 9. Failed transactions: the intentional GBP withdrawal from the sample data
+# Expected: 200, 1 transaction with failureReason "INSUFFICIENT_FUNDS"
+GET {{baseUrl}}/transactions?status=failed
+
+### 10. Date-time filter with an offset: encode "+" as %2B (or use Z)
+# Expected: 200, 3 transactions (16:45+02:00 is 14:45Z, the EUR transfer)
+GET {{baseUrl}}/transactions?from=2024-01-10T16:45:00%2B02:00&to=2024-01-18T11:00:00Z
+
+### 11. Account summary
+# Expected: 200 matching {"totalDeposits":{"USD":5000,"EUR":1200,"UAH":1000},"totalWithdrawals":{"USD":300.49,"EUR":250,"UAH":0},"transactionCount":7,"failedCount":1}
+GET {{baseUrl}}/accounts/ACC-12345/summary
+
+### 12. Deposit
+# Expected: 201, status "completed"
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "toAccount": "ACC-67890",
+  "amount": 25,
+  "currency": "EUR",
+  "type": "deposit"
+}
+
+### 13. Withdrawal without enough funds: still recorded, as failed
+# Expected: 201, status "failed"
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "fromAccount": "ACC-67890",
+  "amount": 1000000,
+  "currency": "GBP",
+  "type": "withdrawal"
+}
+
+### 14. Account with no transactions: empty balance, not 404
+# Expected: 200 {"accountId":"ACC-99999","balance":{}}
+GET {{baseUrl}}/accounts/ACC-99999/balance
+
+### 15. Error: several invalid fields, all reported at once
+# Expected: 400 with details for toAccount, amount, currency and timestamp
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "toAccount": "acc-123",
+  "amount": "100",
+  "currency": "usd",
+  "type": "deposit",
+  "timestamp": "2024-01-15T10:30:00"
+}
+
+### 16. Error: a deposit must not have a source account
+# Expected: 400
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "fromAccount": "ACC-67890",
+  "toAccount": "ACC-12345",
+  "amount": 10,
+  "currency": "USD",
+  "type": "deposit"
+}
+
+### 17. Error: more than 2 decimal places
+# Expected: 400
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{
+  "toAccount": "ACC-12345",
+  "amount": 10.005,
+  "currency": "USD",
+  "type": "deposit"
+}
+
+### 18. Error: malformed JSON
+# Expected: 400
+POST {{baseUrl}}/transactions
+Content-Type: application/json
+
+{"type": "deposit",
+
+### 19. Error: unknown transaction id
+# Expected: 404 {"error":"Transaction not found"}
+GET {{baseUrl}}/transactions/00000000-0000-4000-8000-000000000000
+
+### 20. Error: invalid filters (unknown type, "from" later than "to")
+# Expected: 400
+GET {{baseUrl}}/transactions?type=refund&from=2024-02-01&to=2024-01-31
+
+### 21. Error: unknown query parameter (a typo is not silently ignored)
+# Expected: 400
+GET {{baseUrl}}/transactions?tpye=transfer
+
+### 22. Error: malformed account id in the path
+# Expected: 400
+GET {{baseUrl}}/accounts/acc-123/balance
+
+### 23. Error: the account endpoints take no query parameters
+# Expected: 400
+GET {{baseUrl}}/accounts/ACC-12345/summary?currency=USD
+
+### 24. Error: unknown route
+# Expected: 404 {"error":"Not found"}
+GET {{baseUrl}}/accounts
