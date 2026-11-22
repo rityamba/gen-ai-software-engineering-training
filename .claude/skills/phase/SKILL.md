@@ -61,7 +61,7 @@ File: `homework-1/postman/banking-transactions-api.postman_collection.json` (Pos
 - Update folder descriptions that the phase made stale.
 - Add requests for the new behaviour, success and error cases, each with `pm.test` assertions in the style of the existing ones. Assert shapes and contracts, not totals that grow when the collection is run repeatedly against the same server.
 - Place new folders in a sensible run order (before "Unknown routes").
-- Verify: start the server on a spare port (`PORT=3999 node src/server.js` in the background), run `postman collection run <collection> --env-var baseUrl=http://localhost:3999 --env-var accountA=ACC-12345 --env-var accountB=ACC-67890` **twice in a row**, require 0 failed assertions in both runs, then stop the server.
+- Verify: start the server on a spare port (`PORT=3999 node src/server.js` in the background), run `postman collection run <collection> -e homework-1/postman/local.postman_environment.json --env-var baseUrl=http://localhost:3999` **twice in a row**, require 0 failed assertions in both runs, then stop the server. Take the accounts from the environment file: never override `accountA`/`accountB` with accounts that `demo/sample-data.json` uses. If `demo/` exists, also run the collection twice against a server started with `PORT=3999 demo/run.sh` (seeded), then stop it by its PID; never stop servers with `pkill`.
 - Screenshot reminder (one line): suggest screenshotting the collection run.
 
 ## Step 6 — Stop before commit
