@@ -2439,6 +2439,216 @@
       ]
     },
     {
+      "name": "Account summary",
+      "description": "`GET /accounts/:accountId/summary` \u2014 an at-a-glance view of one account.\n\n- `totalDeposits` / `totalWithdrawals`: per currency, **completed** transactions only. An incoming transfer counts as a deposit, an outgoing one as a withdrawal, so for each currency deposits \u2212 withdrawals = balance. Both totals list the same currencies as the balance, with `0` for a side without movement.\n- `transactionCount`, `failedCount`, `mostRecentTransactionDate`: cover **all** of the account's transactions, failed ones included.\n- No transactions: `{}`, `{}`, `0`, `0`, `null`.\n- A malformed `accountId` gives **400**; the endpoint takes **no query parameters** (any one gives **400**).\n\n**200**\n```json\n{ \"accountId\": \"ACC-12345\", \"totalDeposits\": { \"USD\": 1000, \"EUR\": 250 }, \"totalWithdrawals\": { \"USD\": 0, \"EUR\": 250 },\n  \"transactionCount\": 7, \"failedCount\": 0, \"mostRecentTransactionDate\": \"2024-01-15T10:30:00.000Z\" }\n```\nTotals grow with every run against the same server, so the tests check the contract, not exact numbers.",
+      "item": [
+        {
+          "name": "Summary - account A",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "summary"
+              ]
+            },
+            "description": "EUR and UAH were deposited and then fully spent (withdrawal and outgoing transfer), so deposits equal withdrawals for both: the balance invariant at work."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"Summary shape\", () => {",
+                  "  pm.expect(s).to.have.all.keys('accountId','totalDeposits','totalWithdrawals','transactionCount','failedCount','mostRecentTransactionDate');",
+                  "  pm.expect(s.accountId).to.eql(pm.variables.get(\"accountA\"));",
+                  "  pm.expect(s.transactionCount).to.be.at.least(s.failedCount);",
+                  "  pm.expect(s.mostRecentTransactionDate).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);",
+                  "});",
+                  "pm.test(\"Both totals list the same currencies\", () => {",
+                  "  pm.expect(Object.keys(s.totalWithdrawals)).to.eql(Object.keys(s.totalDeposits));",
+                  "  for (const v of [...Object.values(s.totalDeposits), ...Object.values(s.totalWithdrawals)]) pm.expect(v).to.be.at.least(0);",
+                  "});",
+                  "pm.test(\"Fully spent currencies: deposits equal withdrawals\", () => {",
+                  "  pm.expect(s.totalDeposits.EUR).to.be.above(0);",
+                  "  pm.expect(s.totalWithdrawals.EUR).to.eql(s.totalDeposits.EUR);",
+                  "  pm.expect(s.totalWithdrawals.UAH).to.eql(s.totalDeposits.UAH);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - failed counted, not totalled",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountB}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountB}}",
+                "summary"
+              ]
+            },
+            "description": "`accountB` received the UAH transfer and has a failed GBP withdrawal: it is in the counts, but not in the totals."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"Summary shape\", () => {",
+                  "  pm.expect(s).to.have.all.keys('accountId','totalDeposits','totalWithdrawals','transactionCount','failedCount','mostRecentTransactionDate');",
+                  "  pm.expect(s.accountId).to.eql(pm.variables.get(\"accountB\"));",
+                  "  pm.expect(s.transactionCount).to.be.at.least(s.failedCount);",
+                  "  pm.expect(s.mostRecentTransactionDate).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);",
+                  "});",
+                  "pm.test(\"Both totals list the same currencies\", () => {",
+                  "  pm.expect(Object.keys(s.totalWithdrawals)).to.eql(Object.keys(s.totalDeposits));",
+                  "  for (const v of [...Object.values(s.totalDeposits), ...Object.values(s.totalWithdrawals)]) pm.expect(v).to.be.at.least(0);",
+                  "});",
+                  "pm.test(\"Incoming transfer is a deposit\", () => {",
+                  "  pm.expect(s.totalDeposits.UAH).to.be.above(0);",
+                  "  pm.expect(s.totalWithdrawals.UAH).to.eql(0);",
+                  "});",
+                  "pm.test(\"Failed withdrawal counted but not totalled\", () => {",
+                  "  pm.expect(s.failedCount).to.be.above(0);",
+                  "  pm.expect(s.totalDeposits).to.not.have.property('GBP');",
+                  "  pm.expect(s.totalWithdrawals).to.not.have.property('GBP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - account with no transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-EMPTY/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-EMPTY",
+                "summary"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty summary\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  accountId: \"ACC-EMPTY\", totalDeposits: {}, totalWithdrawals: {},",
+                  "  transactionCount: 0, failedCount: 0, mostRecentTransactionDate: null",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - malformed accountId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/acc-12345/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "acc-12345",
+                "summary"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"accountId\", message: \"Account must match the format ACC-XXXXX, where X is a letter or digit\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary - unknown query parameter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/summary?currency=USD",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountA}}",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => pm.expect(pm.response.json()).to.eql({",
+                  "  error: \"Validation failed\",",
+                  "  details: [{ field: \"currency\", message: \"Unknown query parameter \\\"currency\\\"\" }]",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Unknown routes",
       "description": "Any route or method not listed above returns **404** `{ \"error\": \"Not found\" }` (no 405).",
       "item": [
