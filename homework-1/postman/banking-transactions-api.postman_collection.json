@@ -42,7 +42,7 @@
     },
     {
       "name": "Create transaction",
-      "description": "`POST /transactions` \u2014 records a transaction. Body must be a JSON object with `Content-Type: application/json` (max 100kb).\n\n| Field | Required | Rules |\n|---|---|---|\n| `type` | yes | `deposit` \\| `withdrawal` \\| `transfer` |\n| `amount` | yes | JSON number, `> 0`, `<= 1000000000`, at most 2 decimal places |\n| `currency` | yes | Uppercase ISO 4217, one of: USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH |\n| `fromAccount` | withdrawal, transfer | `ACC-` + 5 letters/digits (case-sensitive); must be absent or `null` for deposit |\n| `toAccount` | deposit, transfer | Same format; must be absent or `null` for withdrawal; must differ from `fromAccount` |\n| `timestamp` | no | ISO 8601 with seconds and timezone (`Z` or `\u00b1hh:mm`), not in the future. Defaults to server time; stored as UTC |\n\nAny other field is rejected (`id`, `status`, `failureReason` are server-set). All problems are reported at once.\n\n**201 Created** + `Location: /transactions/{id}`\n```json\n{ \"id\": \"uuid\", \"fromAccount\": \"ACC-12345 | null\", \"toAccount\": \"ACC-67890 | null\", \"amount\": 100.5,\n  \"currency\": \"USD\", \"type\": \"deposit\", \"timestamp\": \"2024-01-15T10:30:00.000Z\", \"status\": \"completed\" }\n```\n**Status rules:** a deposit is always `completed`. A withdrawal or transfer is `completed` only if `fromAccount` holds enough funds **in that currency** (completed transactions only, checked in arrival order, whatever `timestamp` says).\nOtherwise it is still stored and returned with **201**, but with `status: \"failed\"` and an extra field `failureReason: \"INSUFFICIENT_FUNDS\"`. `failureReason` appears only on failed transactions.\n\nThe deposits below fund the withdrawal and transfer that follow, so those complete.",
+      "description": "`POST /transactions` \u2014 records a transaction. Body must be a JSON object with `Content-Type: application/json` (max 100kb).\n\n| Field | Required | Rules |\n|---|---|---|\n| `type` | yes | `deposit` \\| `withdrawal` \\| `transfer` |\n| `amount` | yes | JSON number, `> 0`, `<= 1000000000`, at most 2 decimal places |\n| `currency` | yes | An active ISO 4217 currency code, upper case (e.g. USD, EUR, GBP, JPY, INR) |\n| `fromAccount` | withdrawal, transfer | `ACC-` + 5 letters/digits, any case; stored and returned in upper case; must be absent or `null` for deposit |\n| `toAccount` | deposit, transfer | Same format; must be absent or `null` for withdrawal; must differ from `fromAccount` |\n| `timestamp` | no | ISO 8601 with seconds and timezone (`Z` or `\u00b1hh:mm`), not in the future. Defaults to server time; stored as UTC |\n\nAny other field is rejected (`id`, `status`, `failureReason` are server-set). All problems are reported at once.\n\n**201 Created** + `Location: /transactions/{id}`\n```json\n{ \"id\": \"uuid\", \"fromAccount\": \"ACC-12345 | null\", \"toAccount\": \"ACC-67890 | null\", \"amount\": 100.5,\n  \"currency\": \"USD\", \"type\": \"deposit\", \"timestamp\": \"2024-01-15T10:30:00.000Z\", \"status\": \"completed\" }\n```\n**Status rules:** a deposit is always `completed`. A withdrawal or transfer is `completed` only if `fromAccount` holds enough funds **in that currency** at its `timestamp` (completed transactions only), and only if no later balance would drop below zero.\nOtherwise it is still stored and returned with **201**, but with `status: \"failed\"` and an extra field `failureReason: \"INSUFFICIENT_FUNDS\"`. `failureReason` appears only on failed transactions.\n\nThe deposits below fund the withdrawal and transfer that follow, so those complete.",
       "item": [
         {
           "name": "Deposit (required fields only)",
@@ -120,10 +120,10 @@
                 "transactions"
               ]
             },
-            "description": "Deposits 250 EUR into `accountA` so the next withdrawal has funds once the funds rule (D2) is in place.",
+            "description": "Deposits 250 EUR into `accountA`, dated 14 January 2024, so the withdrawal that follows (dated 15 January 2024) has funds: the funds rule (D2) checks the balance at the withdrawal's own timestamp.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 250,\n  \"currency\": \"EUR\",\n  \"type\": \"deposit\"\n}",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 250,\n  \"currency\": \"EUR\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-01-14T09:00:00Z\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -147,10 +147,10 @@
                   "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
                   "  pm.expect(tx.status).to.eql('completed');",
                   "});",
-                  "pm.test(\"Defaults applied\", () => {",
+                  "pm.test(\"Defaults applied, timestamp kept\", () => {",
                   "  pm.expect(tx.fromAccount).to.eql(null);",
                   "  pm.expect(tx.amount).to.eql(250);",
-                  "  pm.expect(Date.parse(tx.timestamp)).to.be.closeTo(Date.now(), 60000);",
+                  "  pm.expect(tx.timestamp).to.eql('2024-01-14T09:00:00.000Z');",
                   "});"
                 ]
               }
@@ -176,10 +176,10 @@
                 "transactions"
               ]
             },
-            "description": "Deposits 1500.75 UAH into `accountA` so the transfer has funds once the funds rule (D2) is in place.",
+            "description": "Deposits 1500.75 UAH into `accountA`, dated 14 January 2024, so the transfer that follows (dated 15 January 2024) has funds: the funds rule (D2) checks the balance at the transfer's own timestamp.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1500.75,\n  \"currency\": \"UAH\",\n  \"type\": \"deposit\"\n}",
+              "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 1500.75,\n  \"currency\": \"UAH\",\n  \"type\": \"deposit\",\n  \"timestamp\": \"2024-01-14T09:00:00Z\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -203,10 +203,10 @@
                   "  pm.expect(tx).to.have.all.keys('id','fromAccount','toAccount','amount','currency','type','timestamp','status');",
                   "  pm.expect(tx.status).to.eql('completed');",
                   "});",
-                  "pm.test(\"Defaults applied\", () => {",
+                  "pm.test(\"Defaults applied, timestamp kept\", () => {",
                   "  pm.expect(tx.fromAccount).to.eql(null);",
                   "  pm.expect(tx.amount).to.eql(1500.75);",
-                  "  pm.expect(Date.parse(tx.timestamp)).to.be.closeTo(Date.now(), 60000);",
+                  "  pm.expect(tx.timestamp).to.eql('2024-01-14T09:00:00.000Z');",
                   "});"
                 ]
               }
@@ -929,7 +929,7 @@
           "name": "Currency and type",
           "item": [
             {
-              "name": "Unsupported currency (lowercase)",
+              "name": "Invalid currency (lowercase)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -947,7 +947,7 @@
                     "transactions"
                   ]
                 },
-                "description": "Codes are case-sensitive and limited to the supported list.",
+                "description": "Codes must be upper case and an active ISO 4217 currency.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"toAccount\": \"{{accountA}}\",\n  \"amount\": 100.5,\n  \"currency\": \"usd\",\n  \"type\": \"deposit\"\n}",
@@ -968,7 +968,7 @@
                       "const body = pm.response.json();",
                       "pm.test(\"Validation error contract\", () => {",
                       "  pm.expect(body.error).to.eql(\"Validation failed\");",
-                      "  pm.expect(body.details).to.eql([{\"field\": \"currency\", \"message\": \"Unsupported currency code. Supported: USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH\"}]);",
+                      "  pm.expect(body.details).to.eql([{\"field\": \"currency\", \"message\": \"Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP\"}]);",
                       "});"
                     ]
                   }
@@ -1046,7 +1046,7 @@
                     "transactions"
                   ]
                 },
-                "description": "Prefix is case-sensitive and exactly 5 characters must follow.",
+                "description": "Exactly 5 letters or digits must follow `ACC-` (the id itself is case-insensitive).",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"toAccount\": \"acc-123\",\n  \"amount\": 100.5,\n  \"currency\": \"USD\",\n  \"type\": \"deposit\"\n}",
@@ -1892,7 +1892,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/transactions?accountId=acc-12345",
+                  "raw": "{{baseUrl}}/transactions?accountId=AC-12345",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -1902,7 +1902,7 @@
                   "query": [
                     {
                       "key": "accountId",
-                      "value": "acc-12345"
+                      "value": "AC-12345"
                     }
                   ]
                 },
@@ -2328,17 +2328,17 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/accounts/acc-12345/balance",
+              "raw": "{{baseUrl}}/accounts/AC-12345/balance",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "accounts",
-                "acc-12345",
+                "AC-12345",
                 "balance"
               ]
             },
-            "description": "The `ACC-` prefix is case-sensitive."
+            "description": "The id must be `ACC-` followed by 5 letters or digits."
           },
           "event": [
             {
@@ -2578,13 +2578,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/accounts/acc-12345/summary",
+              "raw": "{{baseUrl}}/accounts/AC-12345/summary",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "accounts",
-                "acc-12345",
+                "AC-12345",
                 "summary"
               ]
             },

@@ -26,14 +26,14 @@ How to install, run, test and try the API: [HOWTORUN.md](HOWTORUN.md). The detai
 ## ✨ Features
 
 - **Transactions:** create a deposit, withdrawal or transfer; list all transactions newest first; get one by id.
-- **Validation:** amount (positive JSON number, at most 2 decimal places, at most 1,000,000,000), account format `ACC-XXXXX`, supported ISO 4217 currency, type, which account fields each type needs, optional timestamp. Every problem in a request is reported at once.
-- **Funds check:** a withdrawal or transfer without enough money in that currency is still recorded, with `status: "failed"` and `failureReason: "INSUFFICIENT_FUNDS"`.
+- **Validation:** amount (positive JSON number, at most 2 decimal places, at most 1,000,000,000), account format `ACC-XXXXX` (any case, stored in upper case), active ISO 4217 currency, type, which account fields each type needs, optional timestamp. Every problem in a request is reported at once.
+- **Funds check:** a withdrawal or transfer without enough money in that currency at its own timestamp is still recorded, with `status: "failed"` and `failureReason: "INSUFFICIENT_FUNDS"`. A backdated one must also leave every later balance non-negative.
 - **Balance:** per currency, from completed transactions only.
 - **Filtering:** by account (source or destination), type, status and date range, combinable.
 - **Summary:** per-currency deposits and withdrawals, transaction count, failed count, most recent transaction date.
 - **Health check:** `GET /health`.
 - **Demo tooling:** `demo/run.sh` starts the API and loads sample data; `demo/sample-requests.http` has 24 ready-made requests; a Postman collection with tests is in `postman/`.
-- **Tests:** 434 Jest + supertest tests, 100% line and branch coverage (the gate is 80%). A traceability test checks that every requirement and decision in the plans is covered by a test named after it.
+- **Tests:** 461 Jest + supertest tests, 100% line and branch coverage (the gate is 80%). A traceability test checks that every requirement and decision in the plans is covered by a test named after it.
 
 ## 🏗️ Architecture
 
@@ -69,7 +69,7 @@ Architecture decisions (details in the [technical plan](docs/technical-implement
 | AD-4 | Money as integer hundredths | Avoids floating-point errors: `0.1 + 0.2` gives exactly `0.3` |
 | AD-5 | Maximum amount 1,000,000,000 | Keeps every sum exact with plain numbers |
 | AD-6 | Strict ISO 8601 timestamps with a timezone | `Date.parse` accepts non-ISO text and silently rolls `2024-02-30` forward |
-| AD-7 | A short list of popular currencies | The task's examples are popular codes; no maintenance |
+| AD-7 | Every active ISO 4217 currency, as a list in the code | What the task asks for; no dependency, and withdrawn or special codes (e.g. `XAU`, `XTS`) are not money an account can hold |
 | AD-8 | Balances derived from transactions on every request; deterministic ordering | One source of truth, nothing to drift |
 | AD-9 | Jest + supertest | Tests the app without opening a port |
 | AD-10 | ESLint (flat config) + Prettier | Consistent style, checked by `npm run lint` and `npm run format:check` |
@@ -106,14 +106,14 @@ Any other route or method gives 404 `{"error":"Not found"}`.
 |---|---|
 | `type` | Required: `deposit`, `withdrawal` or `transfer` |
 | `amount` | Required JSON number (not text), > 0, at most 2 decimal places, at most 1000000000 |
-| `currency` | Required, one of the supported codes, upper case |
-| `fromAccount` | `ACC-` + 5 letters or digits. Required for withdrawal and transfer; must be absent or `null` for a deposit |
+| `currency` | Required. An active ISO 4217 code, upper case |
+| `fromAccount` | `ACC-` + 5 letters or digits, in any case; stored and returned in upper case, so `acc-ab12c` and `ACC-AB12C` are the same account. Required for withdrawal and transfer; must be absent or `null` for a deposit |
 | `toAccount` | Same format. Required for deposit and transfer; must be absent or `null` for a withdrawal; must differ from `fromAccount` |
 | `timestamp` | Optional. ISO 8601 with seconds and a timezone (`Z` or `+02:00`), not in the future |
 
 Any other field is rejected; `id`, `status` and `failureReason` are set by the server.
 
-**Supported currencies:** USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH. Other valid ISO 4217 codes are rejected as *unsupported*.
+**Currencies:** every currency in active circulation in ISO 4217 (155 codes, e.g. USD, EUR, GBP, JPY, INR, UAH). Withdrawn codes (`HRK`, `BGN`), fund codes (`BOV`), precious metals (`XAU`), `XDR` and the test codes `XTS` / `XXX` are rejected. The list is in `src/utils/constants.js`.
 
 **201 Created** (`Location: /transactions/{id}`):
 
@@ -130,13 +130,13 @@ Any other field is rejected; `id`, `status` and `failureReason` are set by the s
 }
 ```
 
-Without enough funds the response is still 201, with `"status": "failed"` and `"failureReason": "INSUFFICIENT_FUNDS"`. Both `fromAccount` and `toAccount` are always present in a response, `null` where the type doesn't use them.
+Without enough funds the response is still 201, with `"status": "failed"` and `"failureReason": "INSUFFICIENT_FUNDS"`. Funds are checked at the transaction's `timestamp`: a backdated withdrawal or transfer fails if the account did not hold enough at that moment, or if it would make any later balance negative. Both `fromAccount` and `toAccount` are always present in a response, `null` where the type doesn't use them.
 
 ### `GET /transactions` filters
 
 | Parameter | Rule |
 |---|---|
-| `accountId` | `ACC-XXXXX`; matches `fromAccount` **or** `toAccount` |
+| `accountId` | `ACC-XXXXX`, any case; matches `fromAccount` **or** `toAccount` |
 | `type` | `deposit`, `withdrawal` or `transfer` |
 | `status` | `pending`, `completed` or `failed` |
 | `from`, `to` | `YYYY-MM-DD` (UTC day) or a date-time with a timezone; both ends inclusive; `from` must not be later than `to` |
@@ -155,7 +155,7 @@ After `demo/run.sh` and the sample transfer:
 { "accountId": "ACC-12345", "balance": { "USD": 4699.51, "EUR": 950, "UAH": 1000 } }
 ```
 
-A currency appears once the account has a completed transaction in it; a net zero shows as `0`. No transactions: `"balance": {}`.
+A currency appears once the account has a completed transaction in it; a net zero shows as `0`. No transactions: `"balance": {}`. The path id is case-insensitive (`/accounts/acc-12345/balance` works too); the response gives it in upper case.
 
 ### `GET /accounts/:accountId/summary`
 
@@ -181,7 +181,7 @@ No transactions: `{}`, `{}`, `0`, `0`, `null`.
   "error": "Validation failed",
   "details": [
     { "field": "amount", "message": "Amount must be a positive number" },
-    { "field": "currency", "message": "Unsupported currency code. Supported: USD, EUR, ..." }
+    { "field": "currency", "message": "Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP" }
   ]
 }
 ```
@@ -205,7 +205,7 @@ No transactions: `{}`, `{}`, `0`, `0`, `null`.
 - Every currency accepts 2 decimal places, including JPY, which has none in practice (D17).
 - A single transaction is limited to 1,000,000,000; account totals stay exact up to about 90 trillion.
 - A timestamp even 1 ms ahead of the server clock is rejected as being in the future.
-- Only the supported currencies above are accepted; other valid ISO 4217 codes are reported as unsupported.
+- The currency list is a constant in the code: when ISO 4217 adds or withdraws a currency, it needs a manual update.
 - In date filters, `+` in an offset must be URL-encoded as `%2B` (or use `Z`); an unencoded `+` gives 400 with a hint.
 - No pagination: the transaction list returns everything.
 - Amounts are JSON numbers: `100.50` comes back as `100.5`, and numbers with more than 15–17 significant digits are rounded by the JSON parser before validation.

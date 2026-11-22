@@ -14,8 +14,11 @@ const FAILURE_REASONS = Object.freeze({
   INSUFFICIENT_FUNDS: "INSUFFICIENT_FUNDS",
 });
 
-/** `ACC-` + 5 letters or digits, case-sensitive (FR-4.2, D14). */
-const ACCOUNT_REGEX = /^ACC-[A-Za-z0-9]{5}$/;
+/**
+ * `ACC-` + 5 letters or digits, in any case (FR-4.2, D14). A matching id is stored and
+ * compared in upper case: see normalizeAccountId.
+ */
+const ACCOUNT_REGEX = /^ACC-[A-Z0-9]{5}$/i;
 
 /** Shared by the body validator and the path validator, so both report the same text. */
 const ACCOUNT_FORMAT_MESSAGE =
@@ -47,25 +50,29 @@ const ALLOWED_FIELDS = Object.freeze([
 const SERVER_FIELDS = Object.freeze(["id", "status", "failureReason"]);
 
 /**
- * Supported ISO 4217 codes: popular, currently active currencies (D18, AD-7).
- * Last reviewed: 2026-11-21.
+ * Valid ISO 4217 codes: every currency in active circulation in ISO 4217 List One
+ * (D18, AD-7). Left out on purpose: withdrawn codes (e.g. HRK, ANG, BGN, ZWL), fund
+ * and unit-of-account codes (e.g. BOV, CLF, USN), precious metals (XAU, XAG, XPD, XPT),
+ * IMF and settlement units (XDR, XSU, XUA, XBA–XBD) and the testing/no-currency codes
+ * XTS and XXX: none of them is money an account can hold.
+ * Last reviewed: 2026-11-22.
  */
-const CURRENCIES = Object.freeze([
-  "USD",
-  "EUR",
-  "GBP",
-  "JPY",
-  "CHF",
-  "CAD",
-  "AUD",
-  "CNY",
-  "SEK",
-  "NOK",
-  "DKK",
-  "PLN",
-  "CZK",
-  "UAH",
-]);
+const CURRENCIES = new Set(
+  `
+    AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF BMD BND
+    BOB BRL BSD BTN BWP BYN BZD CAD CDF CHF CLP CNY COP CRC CUP CVE
+    CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD
+    GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY
+    KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD
+    MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MYR MZN NAD NGN NIO
+    NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF
+    SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL THB
+    TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD UYU UZS VED VES VND
+    VUV WST XAF XCD XCG XOF XPF YER ZAR ZMW ZWG
+  `
+    .trim()
+    .split(/\s+/),
+);
 
 module.exports = {
   TYPES,

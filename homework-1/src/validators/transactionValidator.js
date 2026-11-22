@@ -11,6 +11,7 @@ const {
 } = require("../utils/constants");
 const { validateAmount } = require("../utils/money");
 const { validateTimestamp } = require("../utils/dates");
+const { normalizeAccountId } = require("./accountIdValidator");
 
 /**
  * Which account fields each type needs (FR-1.6).
@@ -59,7 +60,7 @@ function validateAccounts(body, details) {
       details.push({ field, message: ACCOUNT_FORMAT_MESSAGE });
       continue;
     }
-    valid[field] = value;
+    valid[field] = normalizeAccountId(value);
   }
 
   if (
@@ -74,10 +75,13 @@ function validateAccounts(body, details) {
   }
 }
 
+const INVALID_CURRENCY_MESSAGE =
+  "Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP";
+
 function validateCurrency(value) {
   if (value === undefined) return "Currency is required";
-  if (typeof value !== "string" || !CURRENCIES.includes(value)) {
-    return `Unsupported currency code. Supported: ${CURRENCIES.join(", ")}`;
+  if (typeof value !== "string" || !CURRENCIES.has(value)) {
+    return INVALID_CURRENCY_MESSAGE;
   }
   return null;
 }

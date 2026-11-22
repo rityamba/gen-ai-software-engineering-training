@@ -10,8 +10,8 @@ const validate = (body) => validateTransaction(body, { now: NOW });
 const fields = (details) => details.map((d) => d.field);
 const ACCOUNT_FORMAT =
   "Account must match the format ACC-XXXXX, where X is a letter or digit";
-const UNSUPPORTED =
-  "Unsupported currency code. Supported: USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, SEK, NOK, DKK, PLN, CZK, UAH";
+const INVALID_CURRENCY =
+  "Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP";
 
 describe("transactionValidator", () => {
   describe("body shape (FR-4.7)", () => {
@@ -59,7 +59,14 @@ describe("transactionValidator", () => {
       "PLN",
       "CZK",
       "UAH",
-    ])("D18 accepts supported currency %s", (currency) => {
+      // Beyond the popular ones: any active ISO 4217 currency (D18)
+      "INR",
+      "BRL",
+      "XOF",
+      "XCG",
+      "ZWG",
+      "VED",
+    ])("D18 accepts active ISO 4217 currency %s", (currency) => {
       expect(validate(validBody.deposit({ currency }))).toEqual([]);
     });
 
@@ -69,15 +76,27 @@ describe("transactionValidator", () => {
       ).toEqual([]);
     });
 
-    it("D14 treats the 5 account characters as case-sensitive but valid", () => {
+    it.each(["acc-12345", "ACC-abcde", "Acc-A1b2C"])(
+      "D14 accepts account %s in any case",
+      (toAccount) => {
+        expect(validate(validBody.deposit({ toAccount }))).toEqual([]);
+      },
+    );
+
+    it("D14 a transfer between two spellings of one account is rejected", () => {
       expect(
         validate(
           validBody.transfer({
-            fromAccount: "ACC-abcde",
+            fromAccount: "acc-abcde",
             toAccount: "ACC-ABCDE",
           }),
         ),
-      ).toEqual([]);
+      ).toEqual([
+        {
+          field: "toAccount",
+          message: "toAccount must be different from fromAccount",
+        },
+      ]);
     });
   });
 
@@ -165,7 +184,7 @@ describe("transactionValidator", () => {
 
   describe("field formats", () => {
     it.each([
-      "acc-12345",
+      "acc-1234",
       "ACC-1234",
       "ACC-123456",
       "ACC_12345",
@@ -203,14 +222,25 @@ describe("transactionValidator", () => {
       ]);
     });
 
-    it.each(["usd", "XXX", "XAU", "XTS", "DEM", "ABC", "US", "", 840, null])(
-      "D18/AD-7 rejects currency %p as unsupported",
-      (currency) => {
-        expect(validate(validBody.deposit({ currency }))).toEqual([
-          { field: "currency", message: UNSUPPORTED },
-        ]);
-      },
-    );
+    it.each([
+      "usd",
+      "XXX",
+      "XAU",
+      "XTS",
+      "XDR",
+      "DEM",
+      "HRK",
+      "BGN",
+      "ABC",
+      "US",
+      "",
+      840,
+      null,
+    ])("D18/AD-7 rejects currency %p as invalid", (currency) => {
+      expect(validate(validBody.deposit({ currency }))).toEqual([
+        { field: "currency", message: INVALID_CURRENCY },
+      ]);
+    });
 
     it("FR-4.4 requires type", () => {
       const details = validate({
@@ -282,7 +312,7 @@ describe("transactionValidator", () => {
     it("FR-4.6 reports every problem at once, in field order", () => {
       const details = validate({
         fromAccount: "ACC-1",
-        toAccount: "acc-67890",
+        toAccount: "acc-6789",
         amount: -1,
         currency: "usd",
         type: "transfer",

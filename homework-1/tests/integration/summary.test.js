@@ -147,6 +147,16 @@ describe("GET /accounts/:accountId/summary (FR-6)", () => {
     });
   });
 
+  it("D14 a lower-case accountId reads the same account, reported in upper case", async () => {
+    await postTransaction(validBody.deposit({ amount: 10 }));
+
+    const res = await getSummary("acc-12345");
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountId).toBe(A);
+    expect(res.body.totalDeposits).toEqual({ USD: 10 });
+  });
+
   describe("invalid requests (FR-4.2, D16, D22)", () => {
     const ACCOUNT_ERROR = {
       field: "accountId",
@@ -155,7 +165,7 @@ describe("GET /accounts/:accountId/summary (FR-6)", () => {
     };
 
     it.each([
-      ["lower-case prefix", "acc-12345"],
+      ["wrong prefix", "AC-12345"],
       ["too short", "ACC-1234"],
     ])("FR-4.2 a malformed accountId (%s) gives 400", async (_label, id) => {
       const res = await getSummary(id);

@@ -53,7 +53,7 @@ describe("queryValidator (FR-5.5, FR-5.6, D12, D16, D21)", () => {
   });
 
   it.each([
-    ["accountId", "acc-12345", ACCOUNT_MESSAGE],
+    ["accountId", "acc-1234", ACCOUNT_MESSAGE],
     ["type", "refund", "Type must be one of: deposit, withdrawal, transfer"],
     ["type", "Transfer", "Type must be one of: deposit, withdrawal, transfer"],
     ["status", "done", "Status must be one of: pending, completed, failed"],

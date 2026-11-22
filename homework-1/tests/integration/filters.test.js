@@ -75,6 +75,12 @@ describe("GET /transactions filters (FR-5)", () => {
       ]);
     });
 
+    it("D14 accountId matches in any case", async () => {
+      expect(idsOf(await list("?accountId=acc-67890"))).toEqual([
+        ids.transferAB,
+      ]);
+    });
+
     it("FR-5.2 type returns only that type", async () => {
       const res = await list("?type=deposit");
 
@@ -217,7 +223,7 @@ describe("GET /transactions filters (FR-5)", () => {
       ]));
 
     it("FR-5.6/D12 malformed account", () =>
-      expect400("?accountId=acc-12345", [
+      expect400("?accountId=acc-1234", [
         {
           field: "accountId",
           message:

@@ -46,7 +46,7 @@ describe("Accounts API", () => {
     });
 
     it.each([
-      ["lower-case prefix", "acc-12345"],
+      ["wrong prefix", "AC-12345"],
       ["too short", "ACC-1234"],
       ["unexpected characters", "ACC-12%2045"],
     ])("FR-4.2 a malformed accountId (%s) gives 400", async (_label, id) => {
@@ -62,6 +62,18 @@ describe("Accounts API", () => {
               "Account must match the format ACC-XXXXX, where X is a letter or digit",
           },
         ],
+      });
+    });
+
+    it("D14 an account id in any case reads the same account, reported in upper case", async () => {
+      await postTransaction(validBody.deposit({ toAccount: "acc-ab12c" }));
+
+      const res = await getBalance("Acc-Ab12C");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        accountId: "ACC-AB12C",
+        balance: { USD: 100.5 },
       });
     });
 
@@ -144,12 +156,73 @@ describe("Accounts API", () => {
       expect(res.body.failureReason).toBe("INSUFFICIENT_FUNDS");
     });
 
-    it("FR-1.7 funds are checked in arrival order, whatever timestamps were supplied", async () => {
+    it("D2 a withdrawal dated before the deposit that funds it fails", async () => {
       await postTransaction(
         validBody.deposit({ amount: 20, timestamp: "2024-02-01T00:00:00Z" }),
       );
       const res = await postTransaction(
         validBody.withdrawal({ amount: 20, timestamp: "2024-01-01T00:00:00Z" }),
+      );
+
+      expect(res.body.status).toBe("failed");
+      expect(res.body.failureReason).toBe("INSUFFICIENT_FUNDS");
+      expect((await getBalance(A)).body.balance).toEqual({ USD: 20 });
+    });
+
+    it("D2 a backdated withdrawal fails if it would make a later balance negative", async () => {
+      await postTransaction(
+        validBody.deposit({ amount: 100, timestamp: "2024-01-01T00:00:00Z" }),
+      );
+      await postTransaction(
+        validBody.withdrawal({ amount: 80, timestamp: "2024-01-10T00:00:00Z" }),
+      );
+
+      // On 5 January the balance is 100, but on 10 January it would drop to -10.
+      const res = await postTransaction(
+        validBody.withdrawal({ amount: 30, timestamp: "2024-01-05T00:00:00Z" }),
+      );
+
+      expect(res.body.status).toBe("failed");
+      expect((await getBalance(A)).body.balance).toEqual({ USD: 20 });
+    });
+
+    it("D2 a backdated withdrawal within the funds of that date and after completes", async () => {
+      await postTransaction(
+        validBody.deposit({ amount: 100, timestamp: "2024-01-01T00:00:00Z" }),
+      );
+      await postTransaction(
+        validBody.withdrawal({ amount: 80, timestamp: "2024-01-10T00:00:00Z" }),
+      );
+
+      const res = await postTransaction(
+        validBody.withdrawal({ amount: 20, timestamp: "2024-01-05T00:00:00Z" }),
+      );
+
+      expect(res.body.status).toBe("completed");
+      expect((await getBalance(A)).body.balance).toEqual({ USD: 0 });
+    });
+
+    it("D2 a backdated deposit funds a withdrawal dated after it", async () => {
+      await postTransaction(
+        validBody.deposit({ amount: 50, timestamp: "2024-03-01T00:00:00Z" }),
+      );
+      await postTransaction(
+        validBody.deposit({ amount: 50, timestamp: "2024-01-01T00:00:00Z" }),
+      );
+
+      const res = await postTransaction(
+        validBody.withdrawal({ amount: 50, timestamp: "2024-02-01T00:00:00Z" }),
+      );
+
+      expect(res.body.status).toBe("completed");
+    });
+
+    it("D2 a transaction with the same timestamp counts as before the new one", async () => {
+      await postTransaction(
+        validBody.deposit({ amount: 10, timestamp: "2024-01-01T00:00:00Z" }),
+      );
+      const res = await postTransaction(
+        validBody.withdrawal({ amount: 10, timestamp: "2024-01-01T00:00:00Z" }),
       );
 
       expect(res.body.status).toBe("completed");

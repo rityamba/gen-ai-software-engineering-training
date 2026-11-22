@@ -109,10 +109,10 @@ A minimal REST API for banking transactions. Clients can record money movements 
   - a transfer requires both, and they must be different.
 - **FR-1.7** Status rules [Decided — D2]:
   - A deposit is always `completed`.
-  - A withdrawal or transfer is `completed` if the source account has enough funds in that currency.
+  - A withdrawal or transfer is `completed` if the source account has enough funds in that currency at the transaction's timestamp.
   - If it doesn't, the transaction is **still recorded**, with status `failed` and a "created" outcome. The request itself was valid; only the business operation failed, and the attempt stays visible in the history.
   - A failed transaction also states why it failed, as a machine-readable reason (`INSUFFICIENT_FUNDS`). This field is an addition to the specification's model and appears only on failed transactions [Decided — D2].
-  - Funds are checked against the account's completed transactions at the moment the request is processed, in the order requests arrive, whatever timestamps were supplied.
+  - Funds are checked against the account's completed transactions in timestamp order, at the transaction's own timestamp. A backdated withdrawal or transfer must also leave every later balance in that currency at zero or above; otherwise it is `failed`. Transactions with the same timestamp count as earlier than the new one [Decided — D2, revised 2026-11-22].
   - `pending` is part of the model but is not assigned, because processing is immediate.
 - **FR-1.8** Invalid requests are not stored [Decided — D22].
 
@@ -137,11 +137,11 @@ A minimal REST API for banking transactions. Clients can record money movements 
   - The amount must not exceed **1,000,000,000.00** (one billion) in any currency [Decided — D11].
 - **FR-4.2** Account identifiers must follow the format `ACC-XXXXX`, where X is alphanumeric [Req].
   - The same check applies to the account identifier in balance and summary requests [Decided — D22].
-  - The `ACC-` prefix must be upper case. The five characters after it are case-sensitive, so `ACC-abcde` and `ACC-ABCDE` are different accounts [Decided — D14].
+  - The identifier is case-insensitive and is stored and returned in upper case, so `acc-abcde` and `ACC-ABCDE` are the same account [Decided — D14, revised 2026-11-22].
 - **FR-4.3** The currency must be a valid ISO 4217 code [Req].
-  - Only a supported list of popular, currently active currency codes is accepted. Historic and special codes such as `XAU`, `XXX` and `XTS` are rejected [Decided — D18].
+  - Every currency in active circulation in ISO 4217 is accepted. Withdrawn codes (such as `HRK`), fund codes, precious metals, `XDR` and the special codes `XXX` and `XTS` are rejected [Decided — D18, revised 2026-11-22].
   - The code must be upper case, so `usd` is rejected [Decided — D18].
-  - A valid ISO 4217 code that is not on the supported list is rejected with a message saying it is **unsupported** (not "invalid"). The supported list is published in the README [Decided — D18].
+  - A rejected code gets the message "Invalid currency code", as in the specification's example [Decided — D18].
 - **FR-4.4** The type must be one of `deposit`, `withdrawal` or `transfer` [Req, from the model].
 - **FR-4.5** A supplied timestamp must be valid and not in the future [Decided — D1].
 - **FR-4.6** Invalid requests receive meaningful error messages that name each invalid field [Req]. All problems are reported together, not one at a time [Req example; Decided — D22 for "all at once"].
@@ -461,7 +461,7 @@ Phase 0 Foundation (health check, test harness)
 | ID | Was | Decision | Rationale |
 |---|---|---|---|
 | **D1** | OQ1 | The client **may** supply the transaction timestamp (valid ISO 8601 with a timezone, not in the future). If it is left out, the system uses the current time. | The specification marks only the identifier as auto-generated. Its date-range example uses January 2024, which can only return data if historical timestamps are possible. Rejecting future dates prevents transactions being recorded as happening later. |
-| **D2** | OQ2, OQ3 | Keep the funds check: a withdrawal or transfer without enough funds in that currency is **recorded as `failed`** with a "created" outcome and the reason `INSUFFICIENT_FUNDS`. Deposits are always `completed`. `pending` is not assigned. Balances and summary totals use completed transactions only. The specification's sample requests are run in the documented flow, where the sample data first funds ACC-12345. | This gives the `status` field real meaning and keeps an audit trail of failed attempts. The request is valid, so an "invalid request" outcome would be misleading. Funding the account first keeps the samples successful without dropping a realistic rule. Processing is immediate, so nothing is ever pending. |
+| **D2** | OQ2, OQ3 | Keep the funds check: a withdrawal or transfer without enough funds in that currency **at its timestamp** (and, if backdated, at every later point) is **recorded as `failed`** with a "created" outcome and the reason `INSUFFICIENT_FUNDS`. Deposits are always `completed`. `pending` is not assigned. Balances and summary totals use completed transactions only. The specification's sample requests are run in the documented flow, where the sample data first funds ACC-12345. | This gives the `status` field real meaning and keeps an audit trail of failed attempts. The request is valid, so an "invalid request" outcome would be misleading. Funding the account first keeps the samples successful without dropping a realistic rule. Processing is immediate, so nothing is ever pending. Revised 2026-11-22: funds were first checked at processing time, which let a backdated withdrawal spend money that arrived later; checking at the timestamp keeps every point of the history consistent. |
 | **D3** | OQ4 | Balances and summary totals are reported **per currency**. | There is no currency conversion. One combined number would add, for example, dollars to euros, which is meaningless. |
 | **D4** | OQ5 | An account with no transactions returns an **empty** balance or summary, not "not found". | Accounts have no registry; any well-formed identifier is a valid account that simply has no activity yet. "Not found" would wrongly suggest the account cannot exist. |
 | **D5** | — | Each phase ships with its own automated tests. Phase 5 adds regression and edge cases. Milestones M1–M4 as in Section 7.1. | Defects surface in the phase that creates them, and every milestone is demonstrably working. |
@@ -473,11 +473,11 @@ Phase 0 Foundation (health check, test harness)
 | **D11** | OQ7 | The maximum amount of a single transaction is **1,000,000,000.00**. | A round, easy-to-document business limit. It keeps every balance and total exactly calculable at the scale of an in-memory service (see AD-5 in the Technical Implementation Plan). |
 | **D12** | OQ8 | The account filter value is format-checked. A malformed value gives "invalid request". | Consistent with validation elsewhere. The client sees their mistake instead of an empty list. |
 | **D13** | OQ9 | A transaction identifier in an unexpected format gives "not found". | Clients don't need to know the internal identifier format, and this is simpler. |
-| **D14** | OQ10 | The `ACC-` prefix must be upper case. The characters after it are case-sensitive. | Exactly what the specification says, with nothing added. |
+| **D14** | OQ10 | Account identifiers are case-insensitive and normalised to upper case (revised 2026-11-22; first decided as case-sensitive). | Two spellings of one identifier, such as `acc-ab12c` and `ACC-AB12C`, naming two different accounts would be a trap for clients. Upper case is the form the specification uses. |
 | **D15** | OQ11 | Add a filter by status. | Failed transactions (D2) appear in the general list; this lets clients find them. This is an approved addition beyond the specification. |
 | **D16** | OQ12 | Strict validation: unknown fields, unknown or repeated filter parameters, and amounts given as text are rejected. | A typo such as `?tpye=transfer` can't silently produce a wrong result. |
 | **D17** | OQ13 | The per-currency decimal limit is deferred as a future enhancement and documented as a known limitation. | The specification ("maximum 2 decimal places") takes precedence, but the real-world gap (e.g. `JPY 100.5`) stays visible. |
-| **D18** | OQ14 | Only a supported list of popular, currently active ISO 4217 codes (USD, EUR, GBP, JPY, etc.), in upper case. Other valid codes get an "unsupported currency" message, and the list is documented. | A deliberate scope choice: the specification's own examples are popular codes, and a short list needs no maintenance. Historic and special codes (`XAU`, `XXX`, `XTS`) aren't real money for transactions. Upper case is the ISO standard form. Saying "unsupported" rather than "invalid" keeps the message truthful for real codes such as `INR`. |
+| **D18** | OQ14 | Every currency in active circulation in ISO 4217, in upper case (revised 2026-11-22; first decided as a short list of 14 popular codes). Any other value gets "Invalid currency code". | The specification asks to "only accept valid ISO 4217 currency codes"; a short list rejected real codes such as `INR`. Historic and special codes (`XAU`, `XXX`, `XTS`) aren't real money for transactions. Upper case is the ISO standard form. |
 | **D19** | OQ15 | The transaction count includes all transactions. The summary also reports how many failed. The most recent date considers all transactions. | Matches the specification and loses no information. |
 | **D20** | OQ16 | In the summary, an incoming transfer counts as a deposit and an outgoing transfer as a withdrawal. | For each currency, deposits minus withdrawals equals the balance, which is easy to verify. |
 | **D21** | OQ18 | Date filters accept full date-times (with a timezone) or dates only; dates only are UTC. A date-only "to" includes the whole day. | "Up to 31 January" intuitively includes the 31st. The specification's example works as expected. |

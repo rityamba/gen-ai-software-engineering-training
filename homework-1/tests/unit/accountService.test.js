@@ -73,11 +73,35 @@ describe("accountService", () => {
   });
 
   describe("availableMinor", () => {
+    const NOW = "2030-01-01T00:00:00.000Z";
+
     it("FR-1.7 returns hundredths for the currency and 0 for an unused one", () => {
       transactionService.create(validBody.deposit({ amount: 12.34 }));
 
-      expect(accountService.availableMinor(A, "USD")).toBe(1234);
-      expect(accountService.availableMinor(A, "EUR")).toBe(0);
+      expect(accountService.availableMinor(A, "USD", NOW)).toBe(1234);
+      expect(accountService.availableMinor(A, "EUR", NOW)).toBe(0);
+    });
+
+    it("D2 is the lowest of the balance at that time and every later balance", () => {
+      const at = (day) => `2024-01-${day}T00:00:00Z`;
+      transactionService.create(
+        validBody.deposit({ amount: 100, timestamp: at("01") }),
+      );
+      transactionService.create(
+        validBody.withdrawal({ amount: 70, timestamp: at("10") }),
+      );
+      transactionService.create(
+        validBody.deposit({ amount: 50, timestamp: at("20") }),
+      );
+
+      const iso = (day) => new Date(at(day)).toISOString();
+      expect(accountService.availableMinor(A, "USD", iso("01"))).toBe(3000);
+      expect(accountService.availableMinor(A, "USD", iso("05"))).toBe(3000);
+      expect(accountService.availableMinor(A, "USD", iso("15"))).toBe(3000);
+      expect(accountService.availableMinor(A, "USD", iso("25"))).toBe(8000);
+      expect(
+        accountService.availableMinor(A, "USD", "2023-12-31T00:00:00.000Z"),
+      ).toBe(0);
     });
   });
 });

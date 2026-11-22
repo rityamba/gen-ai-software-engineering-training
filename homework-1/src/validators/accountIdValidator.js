@@ -12,4 +12,15 @@ function validateAccountId(accountId) {
   return [{ field: "accountId", message: ACCOUNT_FORMAT_MESSAGE }];
 }
 
-module.exports = { validateAccountId };
+/**
+ * The stored form of an account id: upper case, so `acc-ab12c` and `ACC-AB12C` are the
+ * same account (D14). Call only on an id that matched ACCOUNT_REGEX, which is ASCII-only,
+ * so upper-casing cannot change its length or format.
+ * @param {string} accountId
+ * @returns {string}
+ */
+function normalizeAccountId(accountId) {
+  return accountId.toUpperCase();
+}
+
+module.exports = { validateAccountId, normalizeAccountId };

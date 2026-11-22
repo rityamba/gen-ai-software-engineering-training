@@ -10,6 +10,7 @@ const {
   TRANSACTION_QUERY_PARAMS,
 } = require("../utils/constants");
 const { parseDateFilter } = require("../utils/dates");
+const { normalizeAccountId } = require("./accountIdValidator");
 
 const INVALID_DATE_MESSAGE =
   "Invalid date. Use YYYY-MM-DD or an ISO 8601 date-time with a timezone, e.g. 2024-01-15T10:30:00Z";
@@ -65,7 +66,8 @@ function validateTransactionQuery(query) {
     }
 
     if (field === "accountId") {
-      if (ACCOUNT_REGEX.test(value)) filters.accountId = value;
+      if (ACCOUNT_REGEX.test(value))
+        filters.accountId = normalizeAccountId(value);
       else details.push({ field, message: ACCOUNT_FORMAT_MESSAGE });
     } else if (field === "type") {
       if (TYPES.includes(value)) filters.type = value;

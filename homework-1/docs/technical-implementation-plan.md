@@ -184,9 +184,9 @@ Request body. Only these fields are allowed; anything else gives 400 (D16):
 | Field | Rule |
 |---|---|
 | `type` | Required. One of `deposit`, `withdrawal`, `transfer`. |
-| `fromAccount` / `toAccount` | `^ACC-[A-Za-z0-9]{5}$` (case-sensitive, D14). Required, forbidden or must-differ depending on the type (FR-1.6). |
+| `fromAccount` / `toAccount` | `^ACC-[A-Z0-9]{5}$`, case-insensitive; stored and returned in upper case via `normalizeAccountId` (D14). Required, forbidden or must-differ depending on the type (FR-1.6). |
 | `amount` | A JSON number, not text. Finite, > 0, ≤ 2 decimals, ≤ `MAX_AMOUNT` (AD-4, AD-5). |
-| `currency` | Required. One of the supported ISO 4217 codes, upper case (D18, AD-7). Otherwise the message is `Unsupported currency code. Supported: USD, EUR, …`. |
+| `currency` | Required. An active ISO 4217 code, upper case (D18, AD-7). Otherwise the message is `Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP`. |
 | `timestamp` | Optional. Strict ISO 8601 date-time with an offset, a real calendar date, not in the future (D1, AD-6). |
 | `id`, `status`, `failureReason` | Not accepted. Unknown field gives 400 (FR-1.2, FR-1.4, D16). |
 
@@ -330,8 +330,9 @@ None, as a product non-goal (Confirmed). Consequences and future path:
   - `"100"` as text;
   - `100.123`;
   - `1000000000` (accepted) and `1000000000.01` (rejected);
-  - lower-case `acc-` and `usd`;
-  - unsupported currency codes (for example `XXX`, `ABC`);
+  - lower-case `usd` (rejected) and account ids in any case (accepted, normalised to upper case);
+  - invalid currency codes (for example `XXX`, `ABC`, withdrawn `HRK`);
+  - backdated withdrawals that the balance at their timestamp, or a later balance, cannot cover;
   - repeated, unknown or empty query parameters;
   - `from > to`;
   - a date-only `to` including 23:59:59.999;
@@ -431,11 +432,11 @@ None, as a product non-goal (Confirmed). Consequences and future path:
 - **Alternatives:** accept any value `Date.parse` understands; allow a few seconds of tolerance for clock skew.
 - **Risks:** a client whose clock runs ahead by milliseconds gets a 400. Documented. Tolerance can be added later without breaking compatibility.
 
-### AD-7 Short list of popular currencies — Confirmed (D18)
-- **Why:** `Intl.supportedValuesOf('currency')` (the original notes) also returns historic codes and X-codes such as `XAU`, `XXX`, `XTS` and `DEM`, which conflicts with D18. A full ISO 4217 list is more than the homework needs.
-- **How:** `CURRENCIES` in `src/utils/constants.js` is a frozen `Set` of popular active ISO 4217 codes: `USD`, `EUR`, `GBP`, `JPY`, `CHF`, `CAD`, `AUD`, `CNY`, `SEK`, `NOK`, `DKK`, `PLN`, `CZK`, `UAH`. Any other code gives 400 with the message `Unsupported currency code. Supported: …`, built from the same `Set`. The README API reference lists the codes.
-- **Alternatives:** the full ISO 4217 List One (about 180 codes, has to be maintained); an npm package (needs to be trusted and updated); `Intl` minus exclusions (still lets historic codes through).
-- **Trade-offs:** no dependency, fully predictable.
+### AD-7 Every active ISO 4217 currency, as a constant — Confirmed (D18, revised 2026-11-22)
+- **Why:** the specification asks to accept valid ISO 4217 codes; the first version (14 popular codes) rejected real ones such as `INR`. `Intl.supportedValuesOf('currency')` is not used: depending on the ICU version it still lists withdrawn codes (`ANG`, `BGN`, `HRK`, `ZWL`) and misses new ones (`VED`).
+- **How:** `CURRENCIES` in `src/utils/constants.js` is a `Set` of the 155 currencies in active circulation in ISO 4217 List One, with a "last reviewed" date. Fund codes (`BOV`, `CLF`, …), precious metals (`XAU`, …), `XDR`, `XSU`, `XUA`, the bond-market units and the special codes `XTS` / `XXX` are left out: none is money an account can hold. Any other value gives 400 with `Invalid currency code. …`.
+- **Alternatives:** the old short list (rejects valid codes); an npm package (needs to be trusted and updated); `Intl` minus exclusions (depends on the Node version).
+- **Trade-offs:** no dependency, fully predictable, one place to update.
 - **Risks:** the list goes stale when ISO adds or retires codes, which is rare. Update it by hand and note the date.
 
 ### AD-8 Derived balances and deterministic ordering — Confirmed (D2, D10)
@@ -443,7 +444,7 @@ None, as a product non-goal (Confirmed). Consequences and future path:
 - **How:**
   - The funds check and balance scan the account's completed transactions on each request.
   - Sorting is by `timestamp` descending, then `seq` descending, so a later-created transaction comes first.
-  - The funds check uses all completed transactions at processing time, regardless of their timestamps (FR-1.7).
+  - The funds check (`availableMinor`) orders the account's completed transactions in that currency by `timestamp`, then `seq`, and places the new debit after every transaction with a timestamp up to its own. The debit may spend at most the lowest of the balance at that point and every later balance, so no point in the history goes negative (FR-1.7, D2).
 - **Alternatives:** a balance map kept up to date on every write (O(1) reads, but a second state).
 - **Trade-offs:** reads cost O(n).
 - **Risks:** slower with very large in-memory datasets. Out of scope.
@@ -521,7 +522,7 @@ Task dependencies alone would allow some tasks to start earlier. Each phase stil
 - JPY and similar currencies accept 2 decimals (D17);
 - a single transaction is limited to 1,000,000,000.00 (D11, AD-5);
 - zero tolerance for future timestamps (AD-6);
-- only a short list of popular currencies is supported, and other valid ISO 4217 codes are reported as unsupported (D18, AD-7);
+- the ISO 4217 currency list is maintained by hand (D18, AD-7);
 - `+` in a date-time offset must be URL-encoded as `%2B` in filters (AD-6).
 
 ---

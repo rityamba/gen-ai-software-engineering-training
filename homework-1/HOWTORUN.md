@@ -153,7 +153,7 @@ The collection `postman/banking-transactions-api.postman_collection.json` covers
 npm test
 ```
 
-The suite has 434 tests (unit and integration, Jest + supertest). It needs no running server: integration tests start the app in-process, and `tests/integration/demo.test.js` runs every request in `demo/sample-requests.http` against a seeded server on a random port.
+The suite has 461 tests (unit and integration, Jest + supertest). It needs no running server: integration tests start the app in-process, and `tests/integration/demo.test.js` runs every request in `demo/sample-requests.http` against a seeded server on a random port.
 
 ### Test coverage
 

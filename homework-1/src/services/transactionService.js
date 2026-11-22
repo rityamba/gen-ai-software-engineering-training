@@ -6,6 +6,7 @@ const { toMinor, fromMinor } = require("../utils/money");
 const { parseIsoDateTime } = require("../utils/dates");
 const { FAILURE_REASONS } = require("../utils/constants");
 const { availableMinor } = require("./accountService");
+const { normalizeAccountId } = require("../validators/accountIdValidator");
 
 /**
  * Public representation (§5.2): amount in major units, both account fields always
@@ -35,19 +36,26 @@ function compareNewestFirst(a, b) {
 
 /**
  * Status rules (FR-1.7, D2): a deposit always completes. A withdrawal or transfer
- * completes only if the source account holds enough in that currency, checked
- * against completed transactions at processing time, whatever timestamp was supplied.
+ * completes only if the source account holds enough in that currency at the
+ * transaction's timestamp, without making any later balance negative.
  * @returns {{status: string, failureReason?: string}}
  */
-function decideStatus(type, fromAccount, currency, amountMinor) {
+function decideStatus(type, fromAccount, currency, amountMinor, timestamp) {
   if (type === "deposit") return { status: "completed" };
-  if (availableMinor(fromAccount, currency) >= amountMinor) {
+  if (availableMinor(fromAccount, currency, timestamp) >= amountMinor) {
     return { status: "completed" };
   }
   return {
     status: "failed",
     failureReason: FAILURE_REASONS.INSUFFICIENT_FUNDS,
   };
+}
+
+/** A validated account field in its stored form: upper case, or null when absent (D14, R1). */
+function accountOrNull(value) {
+  return value === undefined || value === null
+    ? null
+    : normalizeAccountId(value);
 }
 
 /**
@@ -58,20 +66,27 @@ function decideStatus(type, fromAccount, currency, amountMinor) {
  * @returns {object} the public representation
  */
 function create(input, { now = new Date() } = {}) {
-  const timestamp =
-    input.timestamp === undefined ? now : parseIsoDateTime(input.timestamp);
-  const fromAccount = input.fromAccount ?? null;
+  const timestamp = (
+    input.timestamp === undefined ? now : parseIsoDateTime(input.timestamp)
+  ).toISOString();
+  const fromAccount = accountOrNull(input.fromAccount);
   const amountMinor = toMinor(input.amount);
 
   const record = store.add({
     id: randomUUID(),
     fromAccount,
-    toAccount: input.toAccount ?? null,
+    toAccount: accountOrNull(input.toAccount),
     amountMinor,
     currency: input.currency,
     type: input.type,
-    timestamp: timestamp.toISOString(),
-    ...decideStatus(input.type, fromAccount, input.currency, amountMinor),
+    timestamp,
+    ...decideStatus(
+      input.type,
+      fromAccount,
+      input.currency,
+      amountMinor,
+      timestamp,
+    ),
   });
   return toPublic(record);
 }

@@ -67,6 +67,27 @@ describe("Transactions API", () => {
       expect(withdrawal.body.toAccount).toBeNull();
     });
 
+    it("D14 stores account ids in upper case, so any spelling is the same account", async () => {
+      const deposit = await postTransaction(
+        validBody.deposit({ toAccount: "acc-ab12c" }),
+      );
+      const withdrawal = await postTransaction(
+        validBody.withdrawal({ fromAccount: "Acc-Ab12C", amount: 100.5 }),
+      );
+
+      expect(deposit.status).toBe(201);
+      expect(deposit.body.toAccount).toBe("ACC-AB12C");
+      expect(withdrawal.body.fromAccount).toBe("ACC-AB12C");
+      expect(withdrawal.body.status).toBe("completed");
+    });
+
+    it("D18 accepts any active ISO 4217 currency, not only the popular ones", async () => {
+      const res = await postTransaction(validBody.deposit({ currency: "INR" }));
+
+      expect(res.status).toBe(201);
+      expect(res.body.currency).toBe("INR");
+    });
+
     it("FR-4.1 accepts up to 2 decimal places in any supported currency", async () => {
       const res = await postTransaction(
         validBody.deposit({ amount: 0.01, currency: "JPY" }),
@@ -94,7 +115,7 @@ describe("Transactions API", () => {
       ["amount above the maximum", { amount: 1000000000.01 }, "amount"],
       ["amount as text", { amount: "100" }, "amount"],
       ["malformed account", { toAccount: "ACC-1" }, "toAccount"],
-      ["lower-case acc- prefix", { toAccount: "acc-12345" }, "toAccount"],
+      ["wrong account prefix", { toAccount: "AC-12345" }, "toAccount"],
       ["lower-case currency", { currency: "usd" }, "currency"],
       ["unknown currency", { currency: "ABC" }, "currency"],
       ["special currency", { currency: "XXX" }, "currency"],
@@ -157,9 +178,8 @@ describe("Transactions API", () => {
           { field: "amount", message: "Amount must be a positive number" },
           {
             field: "currency",
-            message: expect.stringMatching(
-              /^Unsupported currency code\. Supported: USD, EUR/,
-            ),
+            message:
+              "Invalid currency code. Use an active ISO 4217 code in upper case, e.g. USD, EUR or GBP",
           },
         ],
       });

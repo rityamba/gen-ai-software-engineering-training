@@ -39,14 +39,45 @@ function balanceMinorByCurrency(accountId) {
   return balances;
 }
 
+/** Oldest first by timestamp, then by creation order (AD-8). */
+function compareOldestFirst(a, b) {
+  if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
+  return a.seq - b.seq;
+}
+
 /**
- * Funds available for a withdrawal or transfer (FR-1.7). Other currencies never count.
+ * Funds available for a withdrawal or transfer dated `timestamp` (FR-1.7, D2), in
+ * hundredths. Other currencies never count.
+ *
+ * The new debit is placed in the account's history by its timestamp, after any existing
+ * transaction with the same timestamp (it is created last). It may spend at most:
+ * - the balance at that moment, and
+ * - the lowest balance at any later moment, since every later balance drops by the same
+ *   amount and none may go below zero.
+ * Without a backdated timestamp nothing is later, so this is simply the current balance.
  * @param {string} accountId
  * @param {string} currency
+ * @param {string} timestamp ISO 8601 in UTC, as produced by Date#toISOString
  * @returns {number} hundredths
  */
-function availableMinor(accountId, currency) {
-  return balanceMinorByCurrency(accountId).get(currency) ?? 0;
+function availableMinor(accountId, currency, timestamp) {
+  const history = store
+    .getAll()
+    .filter((record) => record.currency === currency)
+    .sort(compareOldestFirst);
+
+  let running = 0;
+  let available = 0;
+  let later = false;
+  for (const record of history) {
+    const change = movementFor(record, accountId);
+    if (change === null) continue;
+    running += change;
+    // Both are toISOString output, so string order is time order.
+    if (!later && record.timestamp > timestamp) later = true;
+    available = later ? Math.min(available, running) : running;
+  }
+  return available;
 }
 
 /**
