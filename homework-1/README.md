@@ -1,8 +1,8 @@
 # 🏦 Homework 1: Banking Transactions API
 
-> **Student Name**: [Your Name]
-> **Date Submitted**: [Date]
-> **AI Tools Used**: [List tools, e.g., Claude Code, GitHub Copilot]
+> **Student Name**: Marharyta Ilinova
+> **Date Submitted**: 22 November 2026
+> **AI Tools Used**: Claude Code (VS Code extension, Claude Opus 5.5), GitHub Copilot, ChatGPT
 
 ---
 
@@ -196,6 +196,68 @@ No transactions: `{}`, `{}`, `0`, `0`, `null`.
 | Unknown transaction | 404 | `{"error":"Transaction not found"}` |
 | Unknown route or method | 404 | `{"error":"Not found"}` |
 | Unexpected error | 500 | `{"error":"Internal server error"}`, no internals |
+
+## 🤖 How AI was used
+
+### Tools
+
+| Tool | What I used it for |
+|---|---|
+| **Claude Code** in VS Code (Claude Opus 5.5) | The main tool: plans, plan review, implementation, tests, Postman collection, demo tooling, documentation and code reviews |
+| **GitHub Copilot** | A second opinion: a review of the first implementation plan |
+| **ChatGPT** (browser) | Drafting and refining my prompts before sending them to Claude Code |
+
+### Workflow
+
+1. **Plan before code.** I asked Claude Code for a detailed plan for Node.js and Option A ([screenshot](docs/screenshots/plan_creation.png)). Copilot reviewed it and raised 8 points, among them unclear status rules, no way to fund an account, a currency list that was too narrow, rounding with `Math.round(amount * 100)` and the format of the date filter. The plan was then split into a [product plan](docs/product-execution-plan.md) (requirements FR-x, decisions D1–D22) and a [technical plan](docs/technical-implementation-plan.md) (architecture decisions AD-1–AD-10).
+2. **Independent plan review.** In a new session I asked Claude Code to "act as an independent Senior Software Architect and Product Reviewer" of both plans ([screenshot](docs/screenshots/plans_review.png)). The verdict was *not approved*: 13 findings, 1 Critical and 1 High ([plan-review.md](docs/plan-review.md)). All of them were resolved before coding started.
+3. **Implementation in phases 0–7**, one commit per phase. Every phase prompt set the scope, the plan sections to follow and the checks to run ([Phase 0 prompt](docs/screenshots/phase_0_prompt.png)).
+4. **My own Claude Code tooling** (in [`.claude/`](../.claude/)), built along the way to make the phases repeatable:
+   - `branch-review` skill: a staff-level review of everything a branch changes, written as a fix list ([screenshot](docs/screenshots/feedback_from_branch_review_skill.png));
+   - `branch-reviewer` subagent: runs that review in a separate context, so the reviewer is not anchored on how the code was written;
+   - `/phase N` skill: implement the phase from the plans → independent review (at most 2 cycles) → fix the findings → update the Postman collection → stop before committing ([Phase 4 result](docs/screenshots/phase-4-summary.png)).
+5. **Final compliance audit.** Claude Code checked every requirement in [TASKS.md](TASKS.md) against the code, with a PASS / PARTIAL / FAIL table. It led to three last changes: every active ISO 4217 currency, case-insensitive account ids, and a funds check at the transaction's own date.
+
+### Example prompt (Phase 0)
+
+More of the prompts I used are collected in [docs/ai-prompts.md](docs/ai-prompts.md).
+
+```text
+Follow homework-1/docs/technical-implementation-plan.md (§4 structure, §6.7 errors,
+§10 logging, §15 tasks) and the Phase 0 acceptance criteria in product-execution-plan.md.
+If something is unclear or the docs conflict — ask, don't assume.
+
+Only Phase 0: no transaction/account logic, demo files, or CI.
+
+First show me a short plan of files to create and wait for my "go".
+When done, run lint, tests, coverage, and curl /health, and show me the results.
+Don't commit.
+```
+
+### How I checked the AI's work
+
+I did not review the source code line by line. I checked what the code is supposed to do and what it actually does:
+
+- **Plans and documentation:** I read them and made the product decisions recorded as D1–D22, for example that a transaction without enough funds is stored as `failed` rather than rejected.
+- **Manual testing:** I sent the requests in [Postman](docs/screenshots/postman_request.png) and the VS Code [REST Client](docs/screenshots/demo_request.png) and compared the responses with the expected results.
+- **Automated checks:** 461 tests with 100% line and branch coverage; a traceability test that fails if any requirement or decision has no test named after it; ESLint and Prettier; the Postman collection's own assertions run by the Postman CLI.
+- **Independent AI reviews:** the plan review, a branch review after each phase, Copilot's review of the first plan and the final compliance audit.
+
+### Where AI needed correcting
+
+- **The plans lost required deliverables.** When the first plan was split in two, the screenshots and the README fields disappeared from both. The plan review caught it (F1).
+- **A simplification broke a guarantee.** After switching money from `BigInt` to integer cents, two maximum-size amounts could add up past the range where JavaScript numbers stay exact. The review caught it (F2), and I chose a limit of 1,000,000,000 per transaction.
+- **The currency list.** Copilot said early on that a short list of currencies does not guarantee "valid ISO 4217". We kept 14 popular codes as a deliberate scope choice. The final audit showed this contradicts the task, so it became the full active ISO 4217 list. Lesson: check scope decisions against the original task, not only against the plan.
+- **Backdated transactions.** The funds check used the current balance whatever date the client supplied, so a withdrawal dated January could spend money deposited in February. The audit found it, and the check now uses the balance at the transaction's date without letting any later balance go negative.
+- **The specification's own sample fails on an empty server.** Transferring 100.50 USD from an account with no money is recorded as `failed`. Instead of dropping the funds rule, `demo/run.sh` loads sample data that funds the account first, and the README explains it.
+- **Postman and demo data collided.** The collection first used the demo accounts, so its results depended on whether the sample data was loaded. It now has its own accounts.
+
+### What worked well
+
+- **Writing the plan and the decisions first.** Every requirement and decision has an ID, and tests are named after these IDs, so it is visible what is covered.
+- **Prompts with explicit limits:** what is in scope and what is not, "ask, don't assume", "show me the plan and wait for my go", "don't commit".
+- **Reviews in a separate context.** A reviewer that did not write the code found real problems in almost every phase.
+- **Using ChatGPT to prepare prompts.** It helped me turn rough ideas into precise instructions before giving them to Claude Code.
 
 ## ⚠️ Known limitations
 
